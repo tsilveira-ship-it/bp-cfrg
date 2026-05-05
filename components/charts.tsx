@@ -17,8 +17,8 @@ import {
 } from "recharts";
 import { fmtCurrency } from "@/lib/format";
 
-const BRAND = "#84171d";
-const PALETTE = [BRAND, "#5a0f14", "#c54552", "#3a3a3a", "#7a7a7a", "#b8a888"];
+const BRAND = "#D32F2F";
+const PALETTE = [BRAND, "#1a1a1a", "#C63A3A", "#F59E0B", "#6b7280", "#9ca3af"];
 
 type Datum = Record<string, number | string>;
 

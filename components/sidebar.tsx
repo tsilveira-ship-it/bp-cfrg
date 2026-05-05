@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
@@ -28,14 +29,22 @@ export function Sidebar() {
     <aside className="hidden md:flex md:w-64 flex-col border-r bg-sidebar text-sidebar-foreground">
       <div className="px-6 py-6 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-md bg-[#84171d] flex items-center justify-center text-white font-black text-lg">
-            RG
+          <div className="h-12 w-12 rounded-md bg-white flex items-center justify-center p-1.5">
+            <Image
+              src="/logo-rg.svg"
+              alt="CrossFit Rive Gauche"
+              width={36}
+              height={36}
+              className="object-contain"
+            />
           </div>
           <div>
-            <div className="font-semibold tracking-tight text-sm leading-tight">
+            <div className="font-heading font-bold tracking-wide text-sm leading-tight uppercase">
               CrossFit Rive Gauche
             </div>
-            <div className="text-xs text-muted-foreground">Business Plan FY25–FY29</div>
+            <div className="text-[10px] text-sidebar-foreground/60 mt-0.5">
+              Business Plan FY25–FY29
+            </div>
           </div>
         </div>
       </div>
@@ -48,7 +57,7 @@ export function Sidebar() {
               key={it.href}
               href={it.href}
               className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                 active
                   ? "bg-sidebar-primary text-sidebar-primary-foreground"
                   : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -60,8 +69,8 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <div className="p-4 text-[10px] text-sidebar-foreground/60 border-t border-sidebar-border">
-        v260505 — données chargées depuis Prévi_gestion
+      <div className="p-4 text-[10px] text-sidebar-foreground/50 border-t border-sidebar-border">
+        v260505 — Prévi_gestion
       </div>
     </aside>
   );

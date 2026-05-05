@@ -1,12 +1,20 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Montserrat, Oswald, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const montserrat = Montserrat({
+  variable: "--font-montserrat",
   subsets: ["latin"],
+  display: "swap",
+});
+
+const oswald = Oswald({
+  variable: "--font-oswald",
+  subsets: ["latin"],
+  display: "swap",
+  weight: ["400", "500", "600", "700"],
 });
 
 const geistMono = Geist_Mono({
@@ -17,6 +25,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "BP CFRG — Business Plan Dashboard",
   description: "Tableau de bord financier — CrossFit Rive Gauche",
+  icons: {
+    icon: "/logo-rg.svg",
+  },
 };
 
 export default function RootLayout({
@@ -27,9 +38,9 @@ export default function RootLayout({
   return (
     <html
       lang="fr"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${montserrat.variable} ${oswald.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full">
+      <body className="min-h-full font-body">
         <div className="flex min-h-screen">
           <Sidebar />
           <main className="flex-1 overflow-x-auto">
