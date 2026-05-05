@@ -234,6 +234,196 @@ Project: `sivxrsztgbbcnqttgtgl` (CFRG Coach Flow)
 
 ---
 
+## Étude de marché & contexte investisseur
+
+Section critique pour dossier banque + pitch investisseur. Manquante actuellement.
+Ajout d'une zone navigation **"Stratégie & Marché"** dans la sidebar.
+
+### Pages à créer
+
+#### 27. `/market` — Étude de marché
+**Sous-sections en onglets:**
+
+- **Taille du marché**
+  - TAM (Total Addressable Market) — Marché fitness France
+  - SAM (Serviceable Addressable Market) — Crossfit + fonctionnel Paris
+  - SOM (Serviceable Obtainable Market) — Cible CFRG sur zone géographique
+  - Sources: Xerfi, INSEE, FFGym, Statista
+  - Visualisation: 3 cercles concentriques avec montants €
+
+- **Tendances secteur**
+  - Croissance fitness France 5 dernières années (CAGR)
+  - Pénétration CrossFit (boxes vs population)
+  - Tendances post-COVID (boutique gyms, communauté, hybrid)
+  - Hyrox émergent — ramp adoption
+  - Source: rapports IHRSA, Les Mills, Statista
+  - Graphes: ligne temporelle croissance
+
+- **Segmentation clients (personas)**
+  - 3-5 personas types (CSP+ 30-45 ans, sportifs amateurs, pros préparation Hyrox, ...)
+  - Pour chaque: âge, revenu, motivations, prix accepté, fréquence
+  - Cartes visuelles avec photo type + métriques
+
+- **Concurrence directe** (CrossFit Paris 13/RG)
+  - Liste boxes Paris zone (Reebok, Train Yard, Louvre, Belleville, ...)
+  - Tableau comparatif: prix, capacité, USP, ancienneté, reviews Google
+  - Carte interactive Paris
+
+- **Concurrence indirecte**
+  - Salles fitness classiques (Basic Fit, On Air, Neoness)
+  - Studios spécialisés (Episod, Resilience, Klay)
+  - Home fitness (Peloton, FreeBeat, apps)
+
+- **Positionnement (USP)**
+  - Matrice positionnement (axes: prix × spécialisation)
+  - Différenciation CFRG (CrossFit + Hyrox + sandbox)
+  - Réponses aux objections classiques
+
+- **Barrières à l'entrée**
+  - CAPEX requis
+  - Affiliation CrossFit HQ
+  - Coachs certifiés (rareté)
+  - Bail commercial (zone tendue)
+
+- **Réglementation**
+  - Affiliation CrossFit + Hyrox
+  - Code du sport
+  - Hygiène / DDPP
+  - URSSAF coachs freelance
+  - Assurance responsabilité civile pro
+
+#### 28. `/strategy` — Stratégie & modèle d'affaires
+**Sous-sections:**
+
+- **Vision / mission / valeurs**
+- **Business Model Canvas** (9 blocs):
+  - Segments clients
+  - Proposition valeur
+  - Canaux distribution
+  - Relation client
+  - Sources revenus
+  - Ressources clés
+  - Activités clés
+  - Partenaires clés
+  - Structure coûts
+- **Stratégie d'acquisition** (digital, partenariats, événements, parrainage)
+- **Stratégie de rétention** (communauté, gamification, programmes)
+- **Pricing strategy** (psychologique, ancrage, freemium drop-in)
+- **Partenariats stratégiques** (kiné, nutritionniste, marques sportives, entreprises)
+
+#### 29. `/team` — Équipe & gouvernance
+- **Bios fondateurs** (3-5 lignes par personne + photo + LinkedIn + expertise)
+- **Conseil d'administration / advisors**
+- **Plan de recrutement** (timeline embauches sur 7 ans)
+- **Organigramme** (visualisation hiérarchique)
+- **Culture / valeurs équipe**
+
+#### 30. `/risks` — Matrice de risques (étendre /audit)
+- **Matrice 2D** impact × probabilité (5×5)
+- **5 catégories**:
+  - Marché (concurrence, baisse demande)
+  - Opérationnel (départ coach clé, équipement HS)
+  - Financier (cash crunch, taux hausse)
+  - RH (recrutement difficile, conflits)
+  - Réglementaire (changement loi, contrôle URSSAF)
+- **Plans de mitigation** par risque
+- **Indicateurs alerte précoce**
+
+#### 31. `/milestones` — Jalons & roadmap projet
+- **Timeline Gantt** des jalons clés:
+  - Signature bail
+  - Levée fonds closé
+  - Travaux début/fin
+  - Affiliation CrossFit officialisée
+  - Recrutement Headcoachs
+  - Soft launch
+  - Grand opening
+  - Atteinte 200 abos
+  - Break-even cashflow
+  - Levée série A (si applicable)
+- **KPIs trackés** par jalon
+- **Owner** par milestone
+
+#### 32. `/competitive-analysis` — Analyse concurrentielle approfondie
+- **Benchmark 5-10 boxes Paris**:
+  - Prix abos
+  - Mix produit
+  - Capacité (m², équipement)
+  - Reviews Google (note + nb avis)
+  - Trafic estimé (Foot Traffic / SimilarWeb)
+  - Réseaux sociaux (followers, engagement)
+- **Tableau comparatif** sortable
+- **Carte géographique** Paris avec markers prix
+
+#### 33. `/use-of-funds` — Utilisation détaillée des fonds (visuel)
+- Sankey diagram: Sources → Catégories → Postes
+- Pourcentages
+- Justification ligne par ligne
+- Lien avec /balance-sheet emplois/ressources
+
+#### 34. `/exit-strategy` — Stratégie de sortie investisseurs
+- **Options**:
+  - Rachat dirigeants (LBO interne)
+  - Cession à groupe fitness (Basic Fit, OnAir, ...)
+  - Franchise / multi-sites (réinvestissement)
+- **Timing** (5-7 ans typique)
+- **Multiples sectoriels** (EBITDA × 4-6 typique)
+- **Valorisation projetée** sous différents scénarios
+
+#### 35. `/swot` — Analyse SWOT
+- 4 cadrans visuels:
+  - Strengths (forces internes)
+  - Weaknesses (faiblesses internes)
+  - Opportunities (opportunités externes)
+  - Threats (menaces externes)
+- Note quantifiée par item (1-5)
+- Plan action par croisement (SO, ST, WO, WT)
+
+#### 36. `/financial-highlights` — Synthèse 1-page financière
+- Pour pitch deck investisseur
+- Top 8 chiffres clés (CA, EBITDA, marge, IRR, multiple, payback, levée, break-even)
+- 2 graphiques (CA + EBITDA)
+- 1 paragraphe synthèse
+- Bouton "Exporter PNG"
+
+#### 37. `/data-room` — Espace documentaire
+- Upload Supabase Storage:
+  - Bail commercial signé
+  - Statuts société
+  - K-bis
+  - Devis travaux + équipement
+  - Lettres d'intention bailleur
+  - CV fondateurs
+  - Contrats partenaires (CrossFit affiliation, Hyrox, ...)
+  - Études marché commandées
+  - Avis comptable
+  - Pièces juridiques
+- Permissions par investisseur (read-only avec watermark)
+- Logs accès (qui a vu quoi)
+
+#### 38. `/customer-validation` — Validation client
+- **Sondages pré-ouverture** (Typeform/Tally)
+- **Pré-inscriptions** (count + LTV potentiel)
+- **NPS pilote** si Javelot existe
+- **Tickets de support** patterns (douleurs récurrentes)
+- **Témoignages** (Javelot legacy)
+
+#### 39. `/financial-glossary` — Glossaire investisseur
+- Étendu vs `/assumptions`
+- 50+ termes avec définition + exemple chiffré
+- Filtrage par catégorie
+- Cherche-trouve rapide
+
+#### 40. `/scenario-narrative` — Narratif scénarios
+- Pour chaque scénario (base, pessimist, optimist):
+  - Storyline en prose (2-3 paragraphes)
+  - Hypothèses différenciantes vs base
+  - Conséquences chiffrées
+  - Probabilité estimée
+- Format pitch readable
+
+---
+
 ## Priorisation suggérée
 
 **Phase 1 (sprint 1)** — Production-ready pour partage:
@@ -257,6 +447,22 @@ Project: `sivxrsztgbbcnqttgtgl` (CFRG Coach Flow)
 - #14 Pitch deck PNG
 - #15 Cap table
 - #18 Comparables marché
+
+**Phase 5 (sprint 5)** — Étude de marché & contexte:
+- #27 /market (TAM/SAM/SOM + concurrence + tendances)
+- #28 /strategy (Business Model Canvas)
+- #29 /team (bios + recrutement)
+- #36 /financial-highlights (synthèse 1-page)
+- #37 /data-room (uploads documents)
+
+**Phase 6 (sprint 6)** — Approfondissement investisseur:
+- #30 /risks (matrice 5x5)
+- #31 /milestones (Gantt projet)
+- #32 /competitive-analysis (benchmark détaillé)
+- #34 /exit-strategy (sortie investisseurs)
+- #35 /swot (analyse SWOT)
+- #38 /customer-validation (preuves marché)
+- #40 /scenario-narrative (storyline scénarios)
 
 ---
 
