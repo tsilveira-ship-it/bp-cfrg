@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/table";
 import { fmtCurrency, fmtNum } from "@/lib/format";
 import { StartMonthPicker } from "@/components/start-month-picker";
+import { FreelancePoolsEditor } from "@/components/freelance-pools-editor";
 import { Trash2, Plus, Calculator, Users, UserCog } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -436,62 +437,7 @@ export default function SalariesPage() {
         </TabsContent>
 
         <TabsContent value="freelance">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                Pools de coachs freelance ({pools.length})
-              </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Édition complète sur la page <span className="font-mono">/parameters → Masse salariale</span>.
-                Ici récap.
-              </p>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Pool</TableHead>
-                    <TableHead className="text-right">Tarif</TableHead>
-                    <TableHead className="text-right">h/sem ouvré</TableHead>
-                    <TableHead className="text-right">h/sem WE</TableHead>
-                    <TableHead className="text-right">h/mo</TableHead>
-                    <TableHead className="text-right">Coût/mo</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pools.map((pool) => {
-                    const h = effectiveMonthlyHours(pool);
-                    return (
-                      <TableRow key={pool.id}>
-                        <TableCell className="font-medium">{pool.name}</TableCell>
-                        <TableCell className="text-right">{fmtCurrency(pool.hourlyRate)}/h</TableCell>
-                        <TableCell className="text-right">
-                          {pool.hoursPerWeekday !== undefined ? pool.hoursPerWeekday.toFixed(1) : "—"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {pool.hoursPerWeekendDay !== undefined ? pool.hoursPerWeekendDay.toFixed(1) : "—"}
-                        </TableCell>
-                        <TableCell className="text-right">{h.toFixed(1)}</TableCell>
-                        <TableCell
-                          className={"text-right font-medium " + (h * pool.hourlyRate < 0 ? "text-red-600" : "")}
-                        >
-                          {fmtCurrency(h * pool.hourlyRate)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                  <TableRow className="font-bold border-t-2 bg-muted/30">
-                    <TableCell colSpan={5}>Net mensuel freelance</TableCell>
-                    <TableCell className="text-right">
-                      {fmtCurrency(
-                        pools.reduce((s, p) => s + p.hourlyRate * effectiveMonthlyHours(p), 0)
-                      )}
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+          <FreelancePoolsEditor />
         </TabsContent>
 
         <TabsContent value="charges">

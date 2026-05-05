@@ -326,364 +326,54 @@ export default function ParametersPage() {
             <div className="text-left">
               <div className="font-semibold">Masse salariale</div>
               <div className="text-xs text-muted-foreground font-normal">
-                Postes, FTEs, bumps FY26 et indexation annuelle
+                Édité dans la section dédiée
               </div>
             </div>
           </AccordionTrigger>
-          <AccordionContent className="px-6 pb-6 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <ParamNumber
-                path="salaries.annualIndexPa"
-                label="Indexation annuelle"
-                value={params.salaries.annualIndexPa}
-                unit="%"
-                step={0.5}
-                hint="Appliquée à partir de FY26"
-              />
-              <ParamNumber
-                path="salaries.chargesPatroPct"
-                label="Charges patronales additionnelles"
-                value={params.salaries.chargesPatroPct}
-                unit="%"
-                hint="0 si déjà incluses dans brut"
-              />
-            </div>
-            <div className="space-y-2">
-              {params.salaries.items.map((it, idx) => (
-                <div key={it.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end p-3 border rounded-md bg-muted/30">
-                  <div className="md:col-span-3">
-                    <Label className="text-xs">Rôle</Label>
-                    <Input
-                      value={it.role}
-                      onChange={(e) =>
-                        setParams((p) => ({
-                          ...p,
-                          salaries: {
-                            ...p.salaries,
-                            items: p.salaries.items.map((s, i) => (i === idx ? { ...s, role: e.target.value } : s)),
-                          },
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <Label className="text-xs">Salaire FY25 (mensuel)</Label>
-                    <Input
-                      type="number"
-                      value={it.monthlyGross}
-                      onChange={(e) =>
-                        setParams((p) => ({
-                          ...p,
-                          salaries: {
-                            ...p.salaries,
-                            items: p.salaries.items.map((s, i) =>
-                              i === idx ? { ...s, monthlyGross: parseFloat(e.target.value) || 0 } : s
-                            ),
-                          },
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <Label className="text-xs">Salaire FY26 (override)</Label>
-                    <Input
-                      type="number"
-                      value={it.fy26Bump ?? ""}
-                      placeholder="—"
-                      onChange={(e) =>
-                        setParams((p) => ({
-                          ...p,
-                          salaries: {
-                            ...p.salaries,
-                            items: p.salaries.items.map((s, i) =>
-                              i === idx
-                                ? {
-                                    ...s,
-                                    fy26Bump: e.target.value === "" ? undefined : parseFloat(e.target.value) || 0,
-                                  }
-                                : s
-                            ),
-                          },
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="md:col-span-1">
-                    <Label className="text-xs">FTE</Label>
-                    <Input
-                      type="number"
-                      step="0.1"
-                      value={it.fte}
-                      onChange={(e) =>
-                        setParams((p) => ({
-                          ...p,
-                          salaries: {
-                            ...p.salaries,
-                            items: p.salaries.items.map((s, i) =>
-                              i === idx ? { ...s, fte: parseFloat(e.target.value) || 0 } : s
-                            ),
-                          },
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="md:col-span-3">
-                    <StartMonthPicker
-                      value={it.startMonth}
-                      onChange={(n) =>
-                        setParams((p) => ({
-                          ...p,
-                          salaries: {
-                            ...p.salaries,
-                            items: p.salaries.items.map((s, i) =>
-                              i === idx ? { ...s, startMonth: n } : s
-                            ),
-                          },
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="md:col-span-2 text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-red-600"
-                      onClick={() =>
-                        setParams((p) => ({
-                          ...p,
-                          salaries: {
-                            ...p.salaries,
-                            items: p.salaries.items.filter((_, i) => i !== idx),
-                          },
-                        }))
-                      }
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+          <AccordionContent className="px-6 pb-6 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+              <div className="p-3 border rounded-md bg-muted/20">
+                <div className="text-xs text-muted-foreground">Cadres salariés</div>
+                <div className="text-lg font-bold">{params.salaries.items.length}</div>
+                <div className="text-[10px] text-muted-foreground">
+                  Total FTE: {params.salaries.items.reduce((s, x) => s + x.fte, 0).toFixed(1)}
                 </div>
-              ))}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  setParams((p) => ({
-                    ...p,
-                    salaries: {
-                      ...p.salaries,
-                      items: [
-                        ...p.salaries.items,
-                        { id: `s_${Date.now()}`, role: "Nouveau poste", monthlyGross: 3000, fte: 1, startMonth: 0 },
-                      ],
-                    },
-                  }))
-                }
-              >
-                <Plus className="h-4 w-4 mr-1" /> Ajouter un poste cadre
-              </Button>
-            </div>
-
-            <div className="pt-6 border-t">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <h4 className="font-heading text-sm font-semibold uppercase tracking-wider">
-                    Coachs freelance (heures facturées)
-                  </h4>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Heures négatives = heures incluses dans salaire cadre (déduction).
-                  </p>
+              </div>
+              <div className="p-3 border rounded-md bg-muted/20">
+                <div className="text-xs text-muted-foreground">Pools freelance</div>
+                <div className="text-lg font-bold">
+                  {(params.salaries.freelancePools ?? []).length}
                 </div>
-                <span className="text-xs font-mono text-muted-foreground">
-                  Net: {fmtCurrency((params.salaries.freelancePools ?? []).reduce((s, pool) => {
+                <div className="text-[10px] text-muted-foreground">
+                  Coût net: {fmtCurrency((params.salaries.freelancePools ?? []).reduce((s, pool) => {
                     const h = pool.hoursPerWeekday !== undefined && pool.hoursPerWeekendDay !== undefined
                       ? (pool.hoursPerWeekday * 5 + pool.hoursPerWeekendDay * 2) * 4.3
                       : pool.monthlyHours;
                     return s + pool.hourlyRate * h;
                   }, 0))}/mo
-                </span>
+                </div>
               </div>
-              <div className="space-y-2">
-                {(params.salaries.freelancePools ?? []).map((pool, idx) => {
-                  const usingWeekly = pool.hoursPerWeekday !== undefined && pool.hoursPerWeekendDay !== undefined;
-                  const computedMonthly = usingWeekly
-                    ? ((pool.hoursPerWeekday ?? 0) * 5 + (pool.hoursPerWeekendDay ?? 0) * 2) * 4.3
-                    : pool.monthlyHours;
-                  const total = pool.hourlyRate * computedMonthly;
-                  return (
-                    <div key={pool.id} className="p-3 border rounded-md bg-muted/20 space-y-2">
-                      <div className="grid grid-cols-12 gap-2 items-end">
-                        <div className="col-span-12 md:col-span-6">
-                          <Label className="text-xs">Pool</Label>
-                          <Input
-                            value={pool.name}
-                            onChange={(e) =>
-                              setParams((p) => ({
-                                ...p,
-                                salaries: {
-                                  ...p.salaries,
-                                  freelancePools: (p.salaries.freelancePools ?? []).map((x, i) =>
-                                    i === idx ? { ...x, name: e.target.value } : x
-                                  ),
-                                },
-                              }))
-                            }
-                          />
-                        </div>
-                        <div className="col-span-6 md:col-span-2">
-                          <Label className="text-xs">Tarif (€/h)</Label>
-                          <Input
-                            type="number"
-                            step="0.5"
-                            value={pool.hourlyRate}
-                            onChange={(e) =>
-                              setParams((p) => ({
-                                ...p,
-                                salaries: {
-                                  ...p.salaries,
-                                  freelancePools: (p.salaries.freelancePools ?? []).map((x, i) =>
-                                    i === idx ? { ...x, hourlyRate: parseFloat(e.target.value) || 0 } : x
-                                  ),
-                                },
-                              }))
-                            }
-                          />
-                        </div>
-                        <div className="col-span-5 md:col-span-3 text-right">
-                          <Label className="text-xs text-muted-foreground">Coût/mo</Label>
-                          <div className={"h-9 px-3 flex items-center justify-end rounded-md border bg-muted/40 text-xs font-mono " + (total < 0 ? "text-red-600" : "")}>
-                            {fmtCurrency(total)}
-                          </div>
-                        </div>
-                        <div className="col-span-1 text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-600"
-                            onClick={() =>
-                              setParams((p) => ({
-                                ...p,
-                                salaries: {
-                                  ...p.salaries,
-                                  freelancePools: (p.salaries.freelancePools ?? []).filter((_, i) => i !== idx),
-                                },
-                              }))
-                            }
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 items-end pt-2 border-t border-dashed">
-                        <div>
-                          <Label className="text-[10px] text-muted-foreground">h/jour ouvré (×5)</Label>
-                          <Input
-                            type="number"
-                            step="0.1"
-                            placeholder="—"
-                            value={pool.hoursPerWeekday ?? ""}
-                            onChange={(e) =>
-                              setParams((p) => ({
-                                ...p,
-                                salaries: {
-                                  ...p.salaries,
-                                  freelancePools: (p.salaries.freelancePools ?? []).map((x, i) =>
-                                    i === idx
-                                      ? {
-                                          ...x,
-                                          hoursPerWeekday:
-                                            e.target.value === "" ? undefined : parseFloat(e.target.value) || 0,
-                                        }
-                                      : x
-                                  ),
-                                },
-                              }))
-                            }
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-[10px] text-muted-foreground">h/jour weekend (×2)</Label>
-                          <Input
-                            type="number"
-                            step="0.1"
-                            placeholder="—"
-                            value={pool.hoursPerWeekendDay ?? ""}
-                            onChange={(e) =>
-                              setParams((p) => ({
-                                ...p,
-                                salaries: {
-                                  ...p.salaries,
-                                  freelancePools: (p.salaries.freelancePools ?? []).map((x, i) =>
-                                    i === idx
-                                      ? {
-                                          ...x,
-                                          hoursPerWeekendDay:
-                                            e.target.value === "" ? undefined : parseFloat(e.target.value) || 0,
-                                        }
-                                      : x
-                                  ),
-                                },
-                              }))
-                            }
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-[10px] text-muted-foreground">
-                            {usingWeekly ? "Heures/mo (auto)" : "Heures/mo (direct)"}
-                          </Label>
-                          {usingWeekly ? (
-                            <div className="h-9 px-3 flex items-center rounded-md border bg-muted/40 text-xs font-mono">
-                              {computedMonthly.toFixed(2)}h
-                            </div>
-                          ) : (
-                            <Input
-                              type="number"
-                              step="0.1"
-                              value={pool.monthlyHours}
-                              onChange={(e) =>
-                                setParams((p) => ({
-                                  ...p,
-                                  salaries: {
-                                    ...p.salaries,
-                                    freelancePools: (p.salaries.freelancePools ?? []).map((x, i) =>
-                                      i === idx ? { ...x, monthlyHours: parseFloat(e.target.value) || 0 } : x
-                                    ),
-                                  },
-                                }))
-                              }
-                            />
-                          )}
-                        </div>
-                        <div className="text-[10px] text-muted-foreground self-center">
-                          {usingWeekly
-                            ? `Calcul: (${pool.hoursPerWeekday ?? 0}×5 + ${pool.hoursPerWeekendDay ?? 0}×2) × 4.3 sem/mo`
-                            : "Mode direct (sans hebdomadaire)"}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setParams((p) => ({
-                      ...p,
-                      salaries: {
-                        ...p.salaries,
-                        freelancePools: [
-                          ...(p.salaries.freelancePools ?? []),
-                          { id: `pool_${Date.now()}`, name: "Nouveau pool", hourlyRate: 25, monthlyHours: 0 },
-                        ],
-                      },
-                    }))
-                  }
-                >
-                  <Plus className="h-4 w-4 mr-1" /> Ajouter un pool freelance
-                </Button>
+              <div className="p-3 border rounded-md bg-muted/20">
+                <div className="text-xs text-muted-foreground">Indexation annuelle</div>
+                <div className="text-lg font-bold">
+                  {fmtPct(params.salaries.annualIndexPa)}
+                </div>
+                <div className="text-[10px] text-muted-foreground">Globale</div>
               </div>
             </div>
+            <a
+              href="/salaries"
+              className="inline-flex items-center gap-2 text-sm font-medium text-[#D32F2F] hover:underline"
+            >
+              Ouvrir l&apos;outil Masse salariale →
+            </a>
+            <p className="text-xs text-muted-foreground">
+              Édition complète des cadres, freelances, taux de charges et estimateur dans la
+              page dédiée <span className="font-mono">/salaries</span>.
+            </p>
           </AccordionContent>
         </AccordionItem>
+
 
         <AccordionItem value="rent" className="border rounded-lg bg-card">
           <AccordionTrigger className="px-6 hover:no-underline">
