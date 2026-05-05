@@ -2,7 +2,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { DEFAULT_PARAMS, AUDIT_CORRECTED_PARAMS } from "./model/defaults";
-import { normalizeParams, type ModelParams } from "./model/types";
+import { normalizeParams, type FieldNote, type ModelParams } from "./model/types";
 
 type ScenarioName = "base" | "audit" | "custom";
 
@@ -17,6 +17,8 @@ type Store = {
   loaded: LoadedRef;
   setParams: (updater: (p: ModelParams) => ModelParams) => void;
   patch: (path: string, value: unknown) => void;
+  setFieldNote: (path: string, note: string, author?: string) => void;
+  clearFieldNote: (path: string) => void;
   applyScenario: (s: ScenarioName) => void;
   setLoaded: (l: LoadedRef) => void;
   loadParams: (params: ModelParams, ref: LoadedRef) => void;
@@ -46,6 +48,31 @@ export const useModelStore = create<Store>()(
         set((s) => ({ params: updater(s.params), scenario: "custom" })),
       patch: (path, value) =>
         set((s) => ({ params: setByPath(s.params, path, value), scenario: "custom" })),
+      setFieldNote: (path, note, author) =>
+        set((s) => {
+          const trimmed = note.trim();
+          const next: Record<string, FieldNote> = { ...(s.params.fieldNotes ?? {}) };
+          if (!trimmed) {
+            delete next[path];
+          } else {
+            next[path] = { note: trimmed, author, date: new Date().toISOString() };
+          }
+          return {
+            params: { ...s.params, fieldNotes: next },
+            scenario: "custom",
+          };
+        }),
+      clearFieldNote: (path) =>
+        set((s) => {
+          const cur = s.params.fieldNotes;
+          if (!cur || !cur[path]) return s;
+          const next = { ...cur };
+          delete next[path];
+          return {
+            params: { ...s.params, fieldNotes: next },
+            scenario: "custom",
+          };
+        }),
       applyScenario: (sc) =>
         set(() => ({
           scenario: sc,

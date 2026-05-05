@@ -1,5 +1,6 @@
 import {
   effectiveMonthlyHours,
+  expandCapex,
   monthlyEmployerCost,
   type BondIssue,
   type LoanLine,
@@ -87,26 +88,19 @@ export function recurringBreakdown(p: ModelParams): YearlyBreakdownRow[] {
     }));
 }
 
-/** Détail D&A: équipement (5y défaut) + travaux (10y défaut). */
+/** Détail D&A: une ligne par poste CAPEX amorti. Respecte la durée d'amort propre à chaque poste. */
 export function daBreakdown(p: ModelParams): YearlyBreakdownRow[] {
   if (!p.tax.enableDA) return [];
   const Y = years(p);
-  const yEquip = p.tax.amortYearsEquipment ?? p.tax.daYears ?? 5;
-  const yTrav = p.tax.amortYearsTravaux ?? Math.max(p.tax.daYears ?? 10, 10);
-  const equipMonthly = p.capex.equipment / Math.max(1, yEquip * 12);
-  const travMonthly = p.capex.travaux / Math.max(1, yTrav * 12);
-  return [
-    {
-      id: "da-equip",
-      label: `Équipement (${yEquip}y)`,
-      values: new Array<number>(Y).fill(equipMonthly * 12),
-    },
-    {
-      id: "da-trav",
-      label: `Travaux (${yTrav}y)`,
-      values: new Array<number>(Y).fill(travMonthly * 12),
-    },
-  ];
+  const items = expandCapex(p);
+  const out: YearlyBreakdownRow[] = [];
+  for (const it of items) {
+    if (it.amortYears <= 0 || it.amount <= 0) continue;
+    const annual = it.amount / it.amortYears;
+    const values = new Array<number>(Y).fill(0).map((_, fy) => (fy < it.amortYears ? annual : 0));
+    out.push({ id: `da-${it.id}`, label: `${it.name} (${it.amortYears}y)`, values });
+  }
+  return out;
 }
 
 /** Détail intérêts par emprunt + par obligation (cash + capitalisé). */
@@ -183,20 +177,15 @@ function bondInterestByFy(bond: BondIssue, Y: number, H: number): number[] {
   return values;
 }
 
-/** Détail CAPEX initial réparti uniquement en FY0. */
+/** Détail CAPEX initial: une ligne par poste, montant réparti uniquement en FY0. */
 export function capexBreakdown(p: ModelParams): YearlyBreakdownRow[] {
   const Y = years(p);
-  const fy0 = (v: number): number[] => {
+  const items = expandCapex(p);
+  return items.map((it) => {
     const arr = new Array<number>(Y).fill(0);
-    arr[0] = v;
-    return arr;
-  };
-  return [
-    { id: "capex-equip", label: "Équipement", values: fy0(p.capex.equipment) },
-    { id: "capex-trav", label: "Travaux", values: fy0(p.capex.travaux) },
-    { id: "capex-jur", label: "Juridique & frais création", values: fy0(p.capex.juridique) },
-    { id: "capex-dep", label: "Dépôts de garantie", values: fy0(p.capex.depots) },
-  ];
+    arr[0] = it.amount;
+    return { id: `capex-${it.id}`, label: it.name, values: arr };
+  });
 }
 
 /** Remboursement principal par emprunt + par obligation. */

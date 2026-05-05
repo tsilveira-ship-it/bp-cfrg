@@ -2,6 +2,7 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useModelStore } from "@/lib/store";
+import { FieldNote } from "@/components/field-note";
 
 type Props = {
   path: string;
@@ -14,6 +15,7 @@ type Props = {
 
 export function ParamNumber({ path, label, value, step = 1, unit = "n", hint }: Props) {
   const patch = useModelStore((s) => s.patch);
+  const note = useModelStore((s) => s.params.fieldNotes?.[path]);
 
   const display = unit === "%" ? value * 100 : value;
   const handleChange = (v: number) => {
@@ -24,8 +26,11 @@ export function ParamNumber({ path, label, value, step = 1, unit = "n", hint }: 
   const suffix = unit === "€" ? "€" : unit === "%" ? "%" : unit === "mois" ? "mois" : "";
 
   return (
-    <div className="space-y-1.5">
-      <Label className="text-xs font-medium">{label}</Label>
+    <div className="group/field space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <Label className="text-xs font-medium">{label}</Label>
+        <FieldNote path={path} label={label} />
+      </div>
       <div className="relative">
         <Input
           type="number"
@@ -40,6 +45,11 @@ export function ParamNumber({ path, label, value, step = 1, unit = "n", hint }: 
           </span>
         )}
       </div>
+      {note && (
+        <p className="text-[10px] text-amber-700 italic line-clamp-2" title={note.note}>
+          📝 {note.note}
+        </p>
+      )}
       {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
     </div>
   );

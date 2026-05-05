@@ -22,6 +22,20 @@ export function buildTimeline(startYear: number, horizonYears: number) {
 // Legacy export kept for components that did not migrate yet
 export const FY_LABELS_LEGACY = ["FY25", "FY26", "FY27", "FY28", "FY29"] as const;
 
+export type CapexItem = {
+  id: string;
+  name: string;
+  category: "equipment" | "travaux" | "juridique" | "depots";
+  amount: number;
+  amortYears: number;     // 0 = non amorti
+};
+
+export type FieldNote = {
+  note: string;
+  author?: string;        // email auteur de la note (si dispo)
+  date: string;           // ISO timestamp dernière édition
+};
+
 export type SubscriptionTier = {
   id: string;
   name: string;
@@ -100,6 +114,19 @@ export function monthlyEmployerCost(item: SalaryItem, profiles: ChargesProfile[]
   if (item.ticketsResto) totalEmployer += item.ticketsResto;
 
   return totalEmployer * item.fte;
+}
+
+/** Retourne la liste effective des postes CAPEX (capexItems si défini, sinon 4 postes globaux). */
+export function expandCapex(p: { capex: { equipment: number; travaux: number; juridique: number; depots: number }; capexItems?: CapexItem[]; tax: { amortYearsEquipment?: number; amortYearsTravaux?: number; daYears: number } }): CapexItem[] {
+  if (p.capexItems && p.capexItems.length > 0) return p.capexItems;
+  const yEquip = p.tax.amortYearsEquipment ?? p.tax.daYears ?? 5;
+  const yTrav = p.tax.amortYearsTravaux ?? Math.max(p.tax.daYears ?? 10, 10);
+  return [
+    { id: "_equip", name: "Équipement (global)", category: "equipment", amount: p.capex.equipment, amortYears: yEquip },
+    { id: "_trav", name: "Travaux (global)", category: "travaux", amount: p.capex.travaux, amortYears: yTrav },
+    { id: "_jur", name: "Juridique & frais création", category: "juridique", amount: p.capex.juridique, amortYears: 0 },
+    { id: "_dep", name: "Dépôts de garantie", category: "depots", amount: p.capex.depots, amortYears: 0 },
+  ];
 }
 
 // Conversion approximative net → brut (charges salariales par défaut 22%)
@@ -188,6 +215,7 @@ export type ModelParams = {
   };
 
   notes?: Record<string, string>;     // notes textuelles libres par scénario
+  fieldNotes?: Record<string, FieldNote>; // annotations par champ (path → note + auteur + date)
 
   legacy: {
     startCount: number;
@@ -229,6 +257,7 @@ export type ModelParams = {
   provisions: { monthlyEquipement: number; monthlyTravaux: number; indexPa: number };
 
   capex: { equipment: number; travaux: number; juridique: number; depots: number };
+  capexItems?: CapexItem[];               // détail par poste (durées d'amort spécifiques). Si défini, override des pools globaux.
 
   financing: {
     // Apports / equity (M0 ou en plusieurs tranches)
