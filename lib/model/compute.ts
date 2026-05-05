@@ -307,6 +307,107 @@ export function computeModel(p: ModelParams): ModelResult {
 
   const finFlows = computeFinanceFlows(p, H);
 
+  // ----- Pre-compute mensuels jusqu'à PBT (sans tax) pour ensuite calculer la tax annuelle avec carry-forward
+  const monthlyEbitda = new Array<number>(H).fill(0);
+  const monthlyEbit = new Array<number>(H).fill(0);
+  const monthlyInterest = new Array<number>(H).fill(0);
+  const monthlyPbt = new Array<number>(H).fill(0);
+  for (let m = 0; m < H; m++) {
+    monthlyEbitda[m] = totalRevenue[m] - totalOpex[m];
+    monthlyEbit[m] = monthlyEbitda[m] - monthlyDA;
+    monthlyInterest[m] = finFlows.interestCash[m] + finFlows.capitalized[m];
+    monthlyPbt[m] = monthlyEbit[m] - monthlyInterest[m];
+  }
+
+  // ----- Yearly tax + loss carry-forward (#4)
+  const lossCarryEnabled = p.tax.enableLossCarryForward !== false;
+  const yearlyTax = new Array<number>(tl.horizonYears).fill(0);
+  const yearlyLossUsed = new Array<number>(tl.horizonYears).fill(0);
+  const yearlyLossBalanceEnd = new Array<number>(tl.horizonYears).fill(0);
+  const yearlyTaxableAfterCarry = new Array<number>(tl.horizonYears).fill(0);
+  let lossBalance = 0;
+  for (let fy = 0; fy < tl.horizonYears; fy++) {
+    let yearPbt = 0;
+    for (let m = fy * FY_LEN; m < (fy + 1) * FY_LEN && m < H; m++) yearPbt += monthlyPbt[m];
+    if (yearPbt >= 0) {
+      const used = lossCarryEnabled ? Math.min(lossBalance, yearPbt) : 0;
+      const taxable = yearPbt - used;
+      yearlyTaxableAfterCarry[fy] = taxable;
+      yearlyTax[fy] = p.tax.enableIs ? taxable * p.tax.isRate : 0;
+      yearlyLossUsed[fy] = used;
+      lossBalance -= used;
+    } else {
+      yearlyTaxableAfterCarry[fy] = 0;
+      yearlyTax[fy] = 0;
+      yearlyLossUsed[fy] = 0;
+      if (lossCarryEnabled) lossBalance += -yearPbt;
+    }
+    yearlyLossBalanceEnd[fy] = lossBalance;
+  }
+
+  // ----- Distribution mensuelle de la tax (#6 IS trimestriel)
+  // Comptable (P&L): tax_monthly = yearlyTax / 12 (lissé)
+  // Cash: monthly = yearlyTax/12, ou trimestriel = yearlyTax/4 aux mois (FY) 2,5,8,11
+  const QUARTERLY_PAY_MONTHS = new Set([2, 5, 8, 11]);
+  const isQuarterly = p.tax.isPaymentSchedule === "quarterly";
+  const monthlyTaxPnL = new Array<number>(H).fill(0);
+  const monthlyTaxCash = new Array<number>(H).fill(0);
+  for (let fy = 0; fy < tl.horizonYears; fy++) {
+    const yt = yearlyTax[fy];
+    for (let m = fy * FY_LEN; m < (fy + 1) * FY_LEN && m < H; m++) {
+      monthlyTaxPnL[m] = yt / 12;
+      const moy = m % FY_LEN;
+      if (isQuarterly) {
+        monthlyTaxCash[m] = QUARTERLY_PAY_MONTHS.has(moy) ? yt / 4 : 0;
+      } else {
+        monthlyTaxCash[m] = yt / 12;
+      }
+    }
+  }
+
+  // ----- TVA mensuelle (#5)
+  const vatEnabled = p.tax.enableVat === true;
+  const vatRate = p.tax.vatRate ?? p.subs.vatRate ?? 0.2;
+  const vatDeductPct = p.tax.vatDeductibleOpexPct ?? 0.5;
+  const monthlyVatCollected = new Array<number>(H).fill(0);
+  const monthlyVatDeductible = new Array<number>(H).fill(0);
+  const monthlyVatNetPayable = new Array<number>(H).fill(0); // accumulation flux (collected-deductible)
+  const monthlyVatCashOut = new Array<number>(H).fill(0);
+  if (vatEnabled) {
+    for (let m = 0; m < H; m++) {
+      // Revenue est traité comme TTC: TVA collectée = revenue * rate / (1+rate)
+      monthlyVatCollected[m] = (totalRevenue[m] * vatRate) / (1 + vatRate);
+      // OPEX et CAPEX traités HT: TVA déductible = base * rate * pourcentage assujetti
+      const opexBase = (totalOpex[m] - sal[m]) * vatDeductPct + (m === 0 ? totalCapex : 0);
+      monthlyVatDeductible[m] = opexBase * vatRate;
+      monthlyVatNetPayable[m] = monthlyVatCollected[m] - monthlyVatDeductible[m];
+    }
+    // Paiement trimestriel: cumul du trimestre payé en mois 2,5,8,11 (FY)
+    let qAcc = 0;
+    for (let m = 0; m < H; m++) {
+      qAcc += monthlyVatNetPayable[m];
+      const moy = m % FY_LEN;
+      if (QUARTERLY_PAY_MONTHS.has(moy)) {
+        monthlyVatCashOut[m] = qAcc;
+        qAcc = 0;
+      }
+    }
+    // Solde non payé en fin d'horizon: payé au dernier mois pour rester équilibré
+    if (qAcc !== 0 && H > 0) monthlyVatCashOut[H - 1] += qAcc;
+  }
+
+  // ----- BFR détaillé (#8)
+  const bfrCustomDays =
+    p.bfr.daysReceivables !== undefined ||
+    p.bfr.daysSupplierPayables !== undefined ||
+    p.bfr.daysStock !== undefined;
+  const bfrDaysNet = bfrCustomDays
+    ? Math.max(
+        0,
+        (p.bfr.daysReceivables ?? 0) - (p.bfr.daysSupplierPayables ?? 0) + (p.bfr.daysStock ?? 0)
+      )
+    : p.bfr.daysOfRevenue;
+
   const monthly: MonthlyComputed[] = [];
   let cash = p.openingCash;
   let prevBfr = 0;
@@ -314,24 +415,38 @@ export function computeModel(p: ModelParams): ModelResult {
   let cashTroughValue = Number.POSITIVE_INFINITY;
   let breakEvenMonth: number | null = null;
   let cumulativeEbitda = 0;
+  let lossBalanceCum = 0; // pour exposition mensuelle
 
   for (let m = 0; m < H; m++) {
-    const ebitda = totalRevenue[m] - totalOpex[m];
+    const ebitda = monthlyEbitda[m];
     cumulativeEbitda += ebitda;
-
     const da = monthlyDA;
-    const ebit = ebitda - da;
-    const interestExpense = finFlows.interestCash[m] + finFlows.capitalized[m];
-    const pbt = ebit - interestExpense;
-    const tax = p.tax.enableIs && pbt > 0 ? pbt * p.tax.isRate : 0;
+    const ebit = monthlyEbit[m];
+    const interestExpense = monthlyInterest[m];
+    const pbt = monthlyPbt[m];
+
+    const fy = Math.floor(m / FY_LEN);
+    const tax = monthlyTaxPnL[m];
+    const taxCash = monthlyTaxCash[m];
     const netIncome = pbt - tax;
 
+    // Suivi mensuel du solde déficits (proxy: utilise PBT mensuel)
+    let lossUsedThisMonth = 0;
+    if (lossCarryEnabled) {
+      if (pbt < 0) {
+        lossBalanceCum += -pbt;
+      } else if (pbt > 0 && lossBalanceCum > 0) {
+        lossUsedThisMonth = Math.min(lossBalanceCum, pbt);
+        lossBalanceCum -= lossUsedThisMonth;
+      }
+    }
+
     const capexThis = m === 0 ? totalCapex : 0;
-    const bfrTarget = totalRevenue[m] * (p.bfr.daysOfRevenue / 30);
+    const bfrTarget = totalRevenue[m] * (bfrDaysNet / 30);
     const bfrChange = bfrTarget - prevBfr;
     prevBfr = bfrTarget;
 
-    const cfo = ebitda - tax - bfrChange;
+    const cfo = ebitda - taxCash - bfrChange - monthlyVatCashOut[m];
     const cfi = -capexThis;
     const fundraise = finFlows.inflow[m];
     const loanRepay = finFlows.principalCash[m];
@@ -350,7 +465,7 @@ export function computeModel(p: ModelParams): ModelResult {
     monthly.push({
       month: m,
       label: tl.monthLabels[m],
-      fy: Math.floor(m / FY_LEN),
+      fy,
       subsCount: subsCount[m],
       subsRevenue: subsRevenue[m],
       legacyCount: legacy.count[m],
@@ -372,6 +487,13 @@ export function computeModel(p: ModelParams): ModelResult {
       interestExpense,
       pbt,
       tax,
+      taxCash,
+      lossCarryForwardBalance: lossBalanceCum,
+      lossUsedThisMonth,
+      vatCollected: monthlyVatCollected[m],
+      vatDeductible: monthlyVatDeductible[m],
+      vatNetPayable: monthlyVatNetPayable[m],
+      vatCashOut: monthlyVatCashOut[m],
       netIncome,
       capex: capexThis,
       bfrChange,
@@ -413,7 +535,14 @@ export function computeModel(p: ModelParams): ModelResult {
       ebit: sum("ebit"),
       interestExpense: sum("interestExpense"),
       pbt: sum("pbt"),
-      tax: sum("tax"),
+      tax: yearlyTax[fy],
+      taxCash: sum("taxCash"),
+      lossCarryForwardBalanceEnd: yearlyLossBalanceEnd[fy],
+      lossUsedThisYear: yearlyLossUsed[fy],
+      taxableIncomeAfterCarryForward: yearlyTaxableAfterCarry[fy],
+      vatCollected: sum("vatCollected"),
+      vatDeductible: sum("vatDeductible"),
+      vatNetPayable: sum("vatNetPayable"),
       netIncome: sum("netIncome"),
       capex: sum("capex"),
       cfo: sum("cfo"),

@@ -353,6 +353,36 @@ export default function PnlPage() {
                   </TableCell>
                 ))}
               </TableRow>
+              {params.tax.enableLossCarryForward !== false && result.yearly.some((y) => y.lossUsedThisYear > 0 || y.lossCarryForwardBalanceEnd > 0) && (
+                <>
+                  <TableRow className="text-xs">
+                    <TableCell className="pl-6 text-muted-foreground">↳ Déficit reporté utilisé</TableCell>
+                    {result.yearly.map((y, i) => (
+                      <TableCell key={i} className="text-right text-muted-foreground">
+                        {y.lossUsedThisYear > 0 ? `(${fmtCurrency(y.lossUsedThisYear, { compact: true })})` : "—"}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  <TableRow className="text-xs">
+                    <TableCell className="pl-6 text-muted-foreground">↳ Base imposable après carry-forward</TableCell>
+                    {result.yearly.map((y, i) => (
+                      <TableCell key={i} className="text-right text-muted-foreground">
+                        {fmtCurrency(y.taxableIncomeAfterCarryForward, { compact: true })}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  <TableRow className="text-xs">
+                    <TableCell className="pl-6 text-muted-foreground">↳ Solde déficits reportables (fin FY)</TableCell>
+                    {result.yearly.map((y, i) => (
+                      <TableCell key={i} className="text-right text-muted-foreground">
+                        {y.lossCarryForwardBalanceEnd > 0
+                          ? fmtCurrency(y.lossCarryForwardBalanceEnd, { compact: true })
+                          : "—"}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                </>
+              )}
               <TableRow>
                 <TableCell><LineWithAnalysis label="Impôts" /></TableCell>
                 {result.yearly.map((y, i) => (

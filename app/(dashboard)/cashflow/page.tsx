@@ -128,10 +128,39 @@ export default function CashflowPage() {
                 ))}
               </TableRow>
               <TableRow>
-                <TableCell className="text-muted-foreground">– Impôts</TableCell>
+                <TableCell className="text-muted-foreground">
+                  – Impôts cash
+                  {params.tax.isPaymentSchedule === "quarterly" && (
+                    <span className="text-xs ml-1">(trimestriel)</span>
+                  )}
+                </TableCell>
                 {result.yearly.map((y, i) => (
-                  <TableCell key={i} className="text-right">{fmtCurrency(-y.tax, { compact: true })}</TableCell>
+                  <TableCell key={i} className="text-right">{fmtCurrency(-y.taxCash, { compact: true })}</TableCell>
                 ))}
+              </TableRow>
+              {params.tax.enableVat && result.yearly.some((y) => y.vatNetPayable !== 0) && (
+                <TableRow>
+                  <TableCell className="text-muted-foreground">
+                    – TVA nette à reverser{" "}
+                    <span className="text-xs">(collectée − déductible)</span>
+                  </TableCell>
+                  {result.yearly.map((y, i) => (
+                    <TableCell key={i} className="text-right">
+                      {fmtCurrency(-y.vatNetPayable, { compact: true })}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              )}
+              <TableRow>
+                <TableCell className="text-muted-foreground">– Variation BFR</TableCell>
+                {result.yearly.map((y, i) => {
+                  const bfrChange = y.cfo - y.ebitda + y.taxCash + y.vatNetPayable;
+                  return (
+                    <TableCell key={i} className="text-right text-muted-foreground">
+                      {bfrChange === 0 ? "—" : fmtCurrency(bfrChange, { compact: true })}
+                    </TableCell>
+                  );
+                })}
               </TableRow>
               <TableRow className="font-semibold">
                 <TableCell><LineWithAnalysis label="Cash Flow Opérationnel (CFO)" /></TableCell>

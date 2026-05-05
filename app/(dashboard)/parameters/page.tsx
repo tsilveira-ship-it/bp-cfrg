@@ -662,7 +662,112 @@ export default function ParametersPage() {
                 value={params.tax.amortYearsTravaux ?? 10}
                 hint={`CAPEX travaux: ${params.capex.travaux.toLocaleString("fr-FR")}€`}
               />
-              <ParamNumber path="bfr.daysOfRevenue" label="BFR (jours de CA)" value={params.bfr.daysOfRevenue} />
+              <ParamNumber path="bfr.daysOfRevenue" label="BFR net (jours de CA)" value={params.bfr.daysOfRevenue} />
+            </div>
+
+            <div className="flex items-center justify-between p-3 border rounded">
+              <div>
+                <Label className="text-sm font-medium">Reprise déficits fiscaux (carry-forward)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Reporte les pertes des FY antérieurs sur les FY rentables (réduit la base imposable).
+                </p>
+              </div>
+              <Switch
+                checked={params.tax.enableLossCarryForward !== false}
+                onCheckedChange={(v) => patch("tax.enableLossCarryForward", v)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between p-3 border rounded">
+              <div>
+                <Label className="text-sm font-medium">Échéancier IS trimestriel</Label>
+                <p className="text-xs text-muted-foreground">
+                  Décaissement par 4 acomptes (mois 2/5/8/11 du FY) au lieu d&apos;un lissage mensuel.
+                  N&apos;affecte que la trésorerie, pas la charge comptable.
+                </p>
+              </div>
+              <Switch
+                checked={params.tax.isPaymentSchedule === "quarterly"}
+                onCheckedChange={(v) => patch("tax.isPaymentSchedule", v ? "quarterly" : "monthly")}
+              />
+            </div>
+
+            <div className="flex items-center justify-between p-3 border rounded">
+              <div>
+                <Label className="text-sm font-medium">Modéliser flux TVA</Label>
+                <p className="text-xs text-muted-foreground">
+                  TVA collectée sur ventes (TTC) - déductible sur achats (HT). Versement trimestriel.
+                  N&apos;affecte que la trésorerie (P&amp;L conservé en TTC).
+                </p>
+              </div>
+              <Switch
+                checked={params.tax.enableVat === true}
+                onCheckedChange={(v) => patch("tax.enableVat", v)}
+              />
+            </div>
+            {params.tax.enableVat && (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 p-3 border rounded bg-muted/20">
+                <ParamNumber
+                  path="tax.vatRate"
+                  label="Taux TVA"
+                  value={params.tax.vatRate ?? params.subs.vatRate ?? 0.20}
+                  unit="%"
+                  step={0.5}
+                />
+                <ParamNumber
+                  path="tax.vatDeductibleOpexPct"
+                  label="% OPEX assujetti TVA"
+                  value={params.tax.vatDeductibleOpexPct ?? 0.5}
+                  unit="%"
+                  step={5}
+                  hint="Salaires exclus automatiquement"
+                />
+              </div>
+            )}
+
+            <div className="p-3 border rounded space-y-3">
+              <div>
+                <Label className="text-sm font-medium">BFR détaillé (optionnel)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Si renseignés, surcharge le BFR net en jours = créances - fournisseurs + stock.
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <ParamNumber
+                  path="bfr.daysReceivables"
+                  label="Créances clients (j)"
+                  value={params.bfr.daysReceivables ?? 0}
+                  hint="Square: ~3j typique"
+                />
+                <ParamNumber
+                  path="bfr.daysSupplierPayables"
+                  label="Dettes fournisseurs (j)"
+                  value={params.bfr.daysSupplierPayables ?? 0}
+                  hint="30j typique B2B"
+                />
+                <ParamNumber
+                  path="bfr.daysStock"
+                  label="Stock (j)"
+                  value={params.bfr.daysStock ?? 0}
+                  hint="0 en service pur"
+                />
+              </div>
+              {(params.bfr.daysReceivables !== undefined ||
+                params.bfr.daysSupplierPayables !== undefined ||
+                params.bfr.daysStock !== undefined) && (
+                <p className="text-xs text-muted-foreground">
+                  BFR net effectif:{" "}
+                  <span className="font-mono font-semibold text-foreground">
+                    {Math.max(
+                      0,
+                      (params.bfr.daysReceivables ?? 0) -
+                        (params.bfr.daysSupplierPayables ?? 0) +
+                        (params.bfr.daysStock ?? 0)
+                    )}
+                  </span>{" "}
+                  jours (override sur BFR jours de CA simple).
+                </p>
+              )}
             </div>
             {(() => {
               const items = expandCapex(params);

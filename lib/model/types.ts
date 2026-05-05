@@ -283,9 +283,23 @@ export type ModelParams = {
     daYears: number;                  // legacy fallback
     amortYearsEquipment?: number;     // default 5
     amortYearsTravaux?: number;       // default 10
+    // #4 Reprise déficits fiscaux
+    enableLossCarryForward?: boolean; // default true: reporte les pertes des FY précédents
+    // #5 TVA
+    enableVat?: boolean;              // default false (n'altère pas P&L existant)
+    vatRate?: number;                 // taux TVA (ex 0.20). Défaut p.subs.vatRate
+    vatDeductibleOpexPct?: number;    // % OPEX avec TVA déductible (default 0.5 — exclut salaires)
+    // #6 Échéancier IS
+    isPaymentSchedule?: "monthly" | "quarterly"; // default "monthly"
   };
 
-  bfr: { daysOfRevenue: number };
+  // #8 BFR détaillé (optionnel — si défini, override `daysOfRevenue`)
+  bfr: {
+    daysOfRevenue: number;            // legacy: BFR net en jours de CA
+    daysReceivables?: number;         // créances clients (Square: 3j typique)
+    daysSupplierPayables?: number;    // dettes fournisseurs (30j typique)
+    daysStock?: number;               // stock (0 typique en service)
+  };
   openingCash: number;
 };
 
@@ -313,7 +327,14 @@ export type MonthlyComputed = {
   ebit: number;
   interestExpense: number;
   pbt: number;
-  tax: number;
+  tax: number;                  // charge IS comptable (P&L)
+  taxCash: number;              // décaissement IS effectif (selon échéancier mensuel/trimestriel)
+  lossCarryForwardBalance: number; // solde déficits reportables fin de mois
+  lossUsedThisMonth: number;    // déficit utilisé pour réduire base imposable ce mois
+  vatCollected: number;         // TVA collectée sur ventes (info)
+  vatDeductible: number;        // TVA déductible sur achats (info)
+  vatNetPayable: number;        // TVA nette à payer (cumul du trimestre, payé aux mois d'échéance)
+  vatCashOut: number;           // décaissement TVA effectif ce mois
   netIncome: number;
   capex: number;
   bfrChange: number;
@@ -349,6 +370,13 @@ export type YearlyComputed = {
   interestExpense: number;
   pbt: number;
   tax: number;
+  taxCash: number;
+  lossCarryForwardBalanceEnd: number; // solde déficits reportables fin FY
+  lossUsedThisYear: number;
+  taxableIncomeAfterCarryForward: number; // base imposable après imputation déficits
+  vatCollected: number;
+  vatDeductible: number;
+  vatNetPayable: number;
   netIncome: number;
   capex: number;
   cfo: number;
