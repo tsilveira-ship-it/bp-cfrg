@@ -80,6 +80,27 @@ Project: `sivxrsztgbbcnqttgtgl` (CFRG Coach Flow)
 
 ## À construire — Backlog priorisé
 
+### 🔴 PRIORITÉ IMMÉDIATE — À FAIRE EN PREMIER
+
+#### 0. Collapse/uncollapse lignes /pnl
+- Sur `/pnl` (Compte de résultat), permettre de déplier/replier les lignes agrégées (CA, OPEX, EBITDA, EBIT, etc.)
+- Cliquer sur la ligne agrégée → expand pour voir les sous-composants qui la composent
+- Exemples:
+  - **CA** → Nouveaux abos, Legacy, Prestations, Merchandising (déjà partiellement présent en lignes ↳)
+  - **Total OPEX** → Salaires, Loyer, Récurrent, Marketing, Provisions, Ponctuels
+  - **Salaires** → Cadres salariés (par poste) + Freelance pools (par pool)
+  - **Récurrent** → Liste détaillée (Électricité, Eau, Ménage, Assurance, Compta, ...)
+  - **Loyer** → Loyer base + Charges copropriété + Taxes annuelles
+  - **CAPEX** → Équipement, Travaux, Juridique, Dépôts
+  - **Intérêts** → par emprunt + par obligation
+  - **D&A** → équipement (5y) + travaux (10y) séparé
+- UI: chevron ▶ / ▼ à gauche du libellé, sous-lignes indentées
+- État expand persistant en local (localStorage par row id)
+- Bouton "Tout déplier" / "Tout replier" en haut
+- Étendre aussi à `/cashflow` et `/balance-sheet` si possible
+
+**Pourquoi**: comprendre la composition de chaque total. Indispensable pour audit interne et investisseurs qui creusent les chiffres.
+
 ### TOP 3 (impact immédiat)
 
 #### 1. Vue investisseur read-only
@@ -425,6 +446,9 @@ Ajout d'une zone navigation **"Stratégie & Marché"** dans la sidebar.
 ---
 
 ## Priorisation suggérée
+
+**Phase 0 (urgence)** — UX critique:
+- **#0 Collapse/uncollapse lignes /pnl** ⚠️ À FAIRE EN PREMIER
 
 **Phase 1 (sprint 1)** — Production-ready pour partage:
 - #1 Vue investisseur read-only
