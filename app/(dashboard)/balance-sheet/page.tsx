@@ -1,10 +1,13 @@
 "use client";
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import { useModelStore } from "@/lib/store";
 import { computeModel } from "@/lib/model/compute";
+import { capexBreakdown, principalRepayBreakdown } from "@/lib/model/breakdowns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
 import { SynthesisCard } from "@/components/synthesis-card";
+import { CollapseToggle, ExpandAllButton } from "@/components/collapse-toggle";
+import { useExpand } from "@/lib/use-expand";
 import {
   Table,
   TableBody,
@@ -16,16 +19,21 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fmtCurrency } from "@/lib/format";
 
+const ROW_IDS = ["immo", "equity", "debt"] as const;
+
 export default function BalanceSheetPage() {
   const params = useModelStore((s) => s.params);
   const result = useMemo(() => computeModel(params), [params]);
+  const { isExpanded, toggle, expandAll, collapseAll, expanded } = useExpand("bs");
+  const allExpanded = ROW_IDS.every((id) => expanded.has(id));
 
-  // Bilan simplifié: actif immo + tréso + BFR client | passif equity + dette + résultat cumul
+  const capexDetail = useMemo(() => capexBreakdown(params), [params]);
+  const principalDetail = useMemo(() => principalRepayBreakdown(params), [params]);
+
   const totalCapex = params.capex.equipment + params.capex.travaux + params.capex.juridique + params.capex.depots;
 
   const bilan = result.yearly.map((y, fy) => {
     const monthsToEnd = (fy + 1) * 12;
-    // Amort cumulé
     const yEquip = params.tax.amortYearsEquipment ?? params.tax.daYears ?? 5;
     const yTrav = params.tax.amortYearsTravaux ?? 10;
     const cumAmortEquip = params.tax.enableDA
@@ -42,12 +50,10 @@ export default function BalanceSheetPage() {
     const bfr = (y.totalRevenue / 12) * (params.bfr.daysOfRevenue / 30);
     const totalActif = immoNette + tresorerie + bfr;
 
-    // Passif
     const equityRaised = (params.financing.equity ?? []).reduce((s, x) => s + x.amount, 0);
     const cumNetIncome = result.yearly.slice(0, fy + 1).reduce((s, x) => s + x.netIncome, 0);
     const capitauxPropres = equityRaised + cumNetIncome;
 
-    // Dette restant: somme bonds + loans - principal remboursé cumulé
     const slice = result.monthly.slice(0, monthsToEnd);
     const bondPrincipalRepaid = slice.reduce((s, m) => s + m.bondPrincipalRepay, 0);
     const loanPrincipalRepaid = slice.reduce((s, m) => s + m.loanPrincipalRepay, 0);
@@ -64,19 +70,50 @@ export default function BalanceSheetPage() {
       label: y.label,
       immoBrute,
       cumAmort,
+      cumAmortEquip,
+      cumAmortTrav,
       immoNette,
       tresorerie,
       bfr,
       totalActif,
       capitauxPropres,
       cumNetIncome,
+      equityRaised,
       dette: Math.max(0, dette),
       totalPassif,
       ecart,
     };
   });
 
-  // Emplois/ressources année 0 (M0)
+  // Detail dettes par instrument: outstanding = principal - cumulative repaid
+  const Y = result.yearly.length;
+  const debtDetailRows = useMemo(() => {
+    const rows: { id: string; label: string; values: number[] }[] = [];
+    for (const loan of params.financing.loans ?? []) {
+      const repaid = principalDetail.find((r) => r.id === `loan-pr-${loan.id}`);
+      const cumByFy = cumulative(repaid?.values ?? new Array<number>(Y).fill(0));
+      const values = cumByFy.map((c) => Math.max(0, loan.principal - c));
+      rows.push({ id: `debt-loan-${loan.id}`, label: loan.name, values });
+    }
+    for (const bond of params.financing.bonds ?? []) {
+      const repaid = principalDetail.find((r) => r.id === `bond-pr-${bond.id}`);
+      const cumByFy = cumulative(repaid?.values ?? new Array<number>(Y).fill(0));
+      const values = cumByFy.map((c) => Math.max(0, bond.principal - c));
+      rows.push({ id: `debt-bond-${bond.id}`, label: bond.name, values });
+    }
+    return rows;
+  }, [params, principalDetail, Y]);
+
+  const equityDetailRows = useMemo(() => {
+    const rows: { id: string; label: string; values: number[] }[] = [];
+    for (const eq of params.financing.equity ?? []) {
+      const fyIn = Math.floor(eq.startMonth / 12);
+      const values = new Array<number>(Y).fill(0).map((_, fy) => (fy >= fyIn ? eq.amount : 0));
+      rows.push({ id: `eq-${eq.id}`, label: eq.name, values });
+    }
+    return rows;
+  }, [params, Y]);
+
   const totalEquity = (params.financing.equity ?? []).reduce((s, x) => s + x.amount, 0);
   const totalLoans = (params.financing.loans ?? []).reduce((s, x) => s + x.principal, 0);
   const totalBonds = (params.financing.bonds ?? []).reduce((s, x) => s + x.principal, 0);
@@ -240,11 +277,18 @@ export default function BalanceSheetPage() {
 
         <TabsContent value="bilan">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Bilan simplifié — fin d&apos;exercice</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Actif et passif au {bilan[bilan.length - 1]?.label}. Bilan dynamique sur tout l&apos;horizon.
-              </p>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base">Bilan simplifié — fin d&apos;exercice</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Actif et passif au {bilan[bilan.length - 1]?.label}. Cliquer sur une ligne pour la détailler.
+                </p>
+              </div>
+              <ExpandAllButton
+                allExpanded={allExpanded}
+                onExpandAll={() => expandAll([...ROW_IDS])}
+                onCollapseAll={collapseAll}
+              />
             </CardHeader>
             <CardContent className="overflow-x-auto">
               <Table>
@@ -261,26 +305,67 @@ export default function BalanceSheetPage() {
                 <TableBody>
                   <TableRow className="font-semibold bg-emerald-50/30">
                     <TableCell>ACTIF</TableCell>
-                    {bilan.map((b, i) => (
+                    {bilan.map((_, i) => (
                       <TableCell key={i} />
                     ))}
                   </TableRow>
+
+                  {/* Immobilisations */}
                   <TableRow>
-                    <TableCell className="pl-6">Immobilisations brutes</TableCell>
+                    <TableCell className="pl-6">
+                      <CollapseToggle open={isExpanded("immo")} onToggle={() => toggle("immo")}>
+                        Immobilisations brutes
+                      </CollapseToggle>
+                    </TableCell>
                     {bilan.map((b, i) => (
                       <TableCell key={i} className="text-right text-xs">
                         {fmtCurrency(b.immoBrute, { compact: true })}
                       </TableCell>
                     ))}
                   </TableRow>
-                  <TableRow>
-                    <TableCell className="pl-6 text-muted-foreground">↳ Amort. cumulé</TableCell>
-                    {bilan.map((b, i) => (
-                      <TableCell key={i} className="text-right text-xs text-muted-foreground">
-                        ({fmtCurrency(b.cumAmort, { compact: true })})
+                  {isExpanded("immo") && (
+                    <Fragment>
+                      {capexDetail.map((r) => (
+                        <TableRow key={r.id} className="text-xs">
+                          <TableCell className="pl-12 text-muted-foreground">↳ {r.label}</TableCell>
+                          {bilan.map((_, i) => (
+                            <TableCell key={i} className="text-right text-muted-foreground">
+                              {/* Brut constant après M0 */}
+                              {fmtCurrency(r.values[0], { compact: true })}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                      <TableRow className="text-xs">
+                        <TableCell className="pl-12 text-muted-foreground">↳ Amort. équipement</TableCell>
+                        {bilan.map((b, i) => (
+                          <TableCell key={i} className="text-right text-muted-foreground">
+                            ({fmtCurrency(b.cumAmortEquip, { compact: true })})
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                      <TableRow className="text-xs">
+                        <TableCell className="pl-12 text-muted-foreground">↳ Amort. travaux</TableCell>
+                        {bilan.map((b, i) => (
+                          <TableCell key={i} className="text-right text-muted-foreground">
+                            ({fmtCurrency(b.cumAmortTrav, { compact: true })})
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    </Fragment>
+                  )}
+                  {!isExpanded("immo") && (
+                    <TableRow>
+                      <TableCell className="pl-12 text-muted-foreground text-xs">
+                        ↳ Amort. cumulé
                       </TableCell>
-                    ))}
-                  </TableRow>
+                      {bilan.map((b, i) => (
+                        <TableCell key={i} className="text-right text-xs text-muted-foreground">
+                          ({fmtCurrency(b.cumAmort, { compact: true })})
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  )}
                   <TableRow className="font-medium">
                     <TableCell className="pl-6">Immo nettes</TableCell>
                     {bilan.map((b, i) => (
@@ -319,12 +404,22 @@ export default function BalanceSheetPage() {
 
                   <TableRow className="font-semibold bg-[#D32F2F]/5">
                     <TableCell>PASSIF</TableCell>
-                    {bilan.map((b, i) => (
+                    {bilan.map((_, i) => (
                       <TableCell key={i} />
                     ))}
                   </TableRow>
+
+                  {/* Capitaux propres */}
                   <TableRow>
-                    <TableCell className="pl-6">Capitaux propres</TableCell>
+                    <TableCell className="pl-6">
+                      {equityDetailRows.length > 0 ? (
+                        <CollapseToggle open={isExpanded("equity")} onToggle={() => toggle("equity")}>
+                          Capitaux propres
+                        </CollapseToggle>
+                      ) : (
+                        "Capitaux propres"
+                      )}
+                    </TableCell>
                     {bilan.map((b, i) => (
                       <TableCell
                         key={i}
@@ -336,24 +431,72 @@ export default function BalanceSheetPage() {
                       </TableCell>
                     ))}
                   </TableRow>
-                  <TableRow>
-                    <TableCell className="pl-12 text-muted-foreground text-xs">
-                      ↳ Résultat cumulé
-                    </TableCell>
-                    {bilan.map((b, i) => (
-                      <TableCell key={i} className="text-right text-xs text-muted-foreground">
-                        {fmtCurrency(b.cumNetIncome, { compact: true })}
+                  {isExpanded("equity") && (
+                    <Fragment>
+                      {equityDetailRows.map((r) => (
+                        <TableRow key={r.id} className="text-xs">
+                          <TableCell className="pl-12 text-muted-foreground">↳ {r.label}</TableCell>
+                          {r.values.map((v, i) => (
+                            <TableCell key={i} className="text-right text-muted-foreground">
+                              {v === 0 ? "—" : fmtCurrency(v, { compact: true })}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                      <TableRow className="text-xs">
+                        <TableCell className="pl-12 text-muted-foreground">
+                          ↳ Résultat cumulé
+                        </TableCell>
+                        {bilan.map((b, i) => (
+                          <TableCell key={i} className="text-right text-muted-foreground">
+                            {fmtCurrency(b.cumNetIncome, { compact: true })}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    </Fragment>
+                  )}
+                  {!isExpanded("equity") && (
+                    <TableRow>
+                      <TableCell className="pl-12 text-muted-foreground text-xs">
+                        ↳ Résultat cumulé
                       </TableCell>
-                    ))}
-                  </TableRow>
+                      {bilan.map((b, i) => (
+                        <TableCell key={i} className="text-right text-xs text-muted-foreground">
+                          {fmtCurrency(b.cumNetIncome, { compact: true })}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  )}
+
+                  {/* Dettes */}
                   <TableRow>
-                    <TableCell className="pl-6">Dettes (emprunts + obligations)</TableCell>
+                    <TableCell className="pl-6">
+                      {debtDetailRows.length > 0 ? (
+                        <CollapseToggle open={isExpanded("debt")} onToggle={() => toggle("debt")}>
+                          Dettes (emprunts + obligations)
+                        </CollapseToggle>
+                      ) : (
+                        "Dettes (emprunts + obligations)"
+                      )}
+                    </TableCell>
                     {bilan.map((b, i) => (
                       <TableCell key={i} className="text-right text-xs">
                         {fmtCurrency(b.dette, { compact: true })}
                       </TableCell>
                     ))}
                   </TableRow>
+                  {isExpanded("debt") &&
+                    debtDetailRows.map((r) => (
+                      <TableRow key={r.id} className="text-xs">
+                        <TableCell className="pl-12 text-muted-foreground">↳ {r.label}</TableCell>
+                        {r.values.map((v, i) => (
+                          <TableCell key={i} className="text-right text-muted-foreground">
+                            {v === 0 ? "—" : fmtCurrency(v, { compact: true })}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+
                   <TableRow className="font-bold border-t-2">
                     <TableCell>Total Passif</TableCell>
                     {bilan.map((b, i) => (
@@ -378,4 +521,9 @@ export default function BalanceSheetPage() {
       </Tabs>
     </div>
   );
+}
+
+function cumulative(arr: number[]): number[] {
+  let s = 0;
+  return arr.map((v) => (s += v));
 }
