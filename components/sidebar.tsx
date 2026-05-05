@@ -34,6 +34,8 @@ import {
   GitBranch,
   BookOpen,
   Globe,
+  MessageSquareText,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "@/components/user-menu";
@@ -80,6 +82,7 @@ const GROUPS: Group[] = [
       { href: "/health-check", label: "Health check", icon: HeartPulse },
       { href: "/cross-checks", label: "Cross-checks", icon: ShieldCheck },
       { href: "/audit-log", label: "Audit log", icon: History },
+      { href: "/qa", label: "Q&A par champ", icon: MessageSquareText },
       { href: "/variance", label: "Variance (réel/prévu)", icon: GitCompareArrows },
       { href: "/monte-carlo", label: "Monte Carlo", icon: Dices },
     ],
@@ -93,6 +96,7 @@ const GROUPS: Group[] = [
       { href: "/master-history", label: "Historique masters", icon: History },
       { href: "/share", label: "Partager (lien investisseur)", icon: Send },
       { href: "/data-room", label: "Data room", icon: FolderOpen },
+      { href: "/full-bp", label: "BP complet (PDF)", icon: FileText },
       { href: "/backup", label: "Backup JSON", icon: FileJson },
       { href: "/print", label: "Export PDF", icon: Printer },
     ],

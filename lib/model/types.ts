@@ -51,6 +51,19 @@ export type CapexItem = {
   amortYears: number;     // 0 = non amorti
 };
 
+/** Q&A inline par champ — thread de commentaires entre fondateur et analyste/investisseur. */
+export type FieldComment = {
+  id: string;
+  author?: string;       // email de l'auteur
+  date: string;          // ISO
+  text: string;
+  resolved?: boolean;    // marquer la question comme traitée
+};
+
+export type FieldQA = {
+  comments: FieldComment[];
+};
+
 /** Réel observé pour un mois donné — pour comparaison réel vs prévu (#20). */
 export type ActualEntry = {
   monthIso: string;             // YYYY-MM (ex: "2026-09" pour Sept 2026 = M0 si FY26)
@@ -250,6 +263,7 @@ export type ModelParams = {
 
   notes?: Record<string, string>;     // notes textuelles libres par scénario
   fieldNotes?: Record<string, FieldNote>; // annotations par champ (path → note + auteur + date)
+  fieldQA?: Record<string, FieldQA>;  // threads Q&A par champ (#10)
   actuals?: ActualEntry[];            // réels mensuels observés (#20)
 
   legacy: {
