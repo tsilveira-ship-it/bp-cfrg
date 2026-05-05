@@ -104,12 +104,34 @@ export const DEFAULT_PARAMS: ModelParams = {
   },
 
   financing: {
-    fundraise: 400000,
-    loanMonthly: 2597.10,
-    loanDurationMonths: 84,
-    bondMonthly: 2000,
-    bondCapitalRepayMonthly: 6666.67,
-    bondDurationMonths: 60,
+    equity: [
+      { id: "apport_perso", name: "Apport personnel", amount: 100000, startMonth: 0 },
+      { id: "levee", name: "Levée de fonds (associés/investisseurs)", amount: 300000, startMonth: 0 },
+    ],
+    loans: [
+      {
+        id: "loan_bank",
+        name: "Emprunt bancaire",
+        principal: 200000,
+        annualRatePct: 3.0,
+        termMonths: 84,
+        startMonth: 0,
+      },
+    ],
+    bonds: [
+      {
+        id: "bond_1",
+        name: "Obligation non convertible (in fine, différé capitalisé)",
+        principal: 200000,
+        annualRatePct: 6,
+        termYears: 5,
+        frequency: 1,
+        amortization: "bullet",
+        deferralYears: 2,
+        capitalizeInterest: true,
+        startMonth: 0,
+      },
+    ],
   },
 
   tax: {

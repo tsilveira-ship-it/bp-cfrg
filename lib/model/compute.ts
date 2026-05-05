@@ -1,11 +1,111 @@
 import {
   buildTimeline,
   effectiveMonthlyHours,
+  type BondIssue,
+  type LoanLine,
   type ModelParams,
   type ModelResult,
   type MonthlyComputed,
   type YearlyComputed,
 } from "./types";
+
+type FinanceFlows = {
+  inflow: number[];
+  interestCash: number[];
+  principalCash: number[];
+  capitalized: number[]; // PIK accrual (non-cash)
+};
+
+function emptyFlows(H: number): FinanceFlows {
+  return {
+    inflow: new Array(H).fill(0),
+    interestCash: new Array(H).fill(0),
+    principalCash: new Array(H).fill(0),
+    capitalized: new Array(H).fill(0),
+  };
+}
+
+function loanFlows(loan: LoanLine, flows: FinanceFlows, H: number): void {
+  if (loan.startMonth < H) flows.inflow[loan.startMonth] += loan.principal;
+  const r = loan.annualRatePct / 100 / 12;
+  const n = loan.termMonths;
+  const mensualite =
+    r > 0 ? (loan.principal * r) / (1 - Math.pow(1 + r, -n)) : loan.principal / n;
+  let bal = loan.principal;
+  for (let i = 0; i < n; i++) {
+    const m = loan.startMonth + i + 1;
+    if (m >= H) break;
+    const interest = bal * r;
+    const principal = mensualite - interest;
+    bal -= principal;
+    flows.interestCash[m] += Math.max(0, interest);
+    flows.principalCash[m] += Math.max(0, principal);
+  }
+}
+
+function bondFlows(bond: BondIssue, flows: FinanceFlows, H: number): void {
+  if (bond.startMonth < H) flows.inflow[bond.startMonth] += bond.principal;
+
+  const totalPeriods = Math.round(bond.termYears * bond.frequency);
+  const deferralPeriods = Math.min(
+    Math.round(bond.deferralYears * bond.frequency),
+    totalPeriods
+  );
+  const monthsPerPeriod = 12 / bond.frequency;
+  const periodRate = bond.annualRatePct / 100 / bond.frequency;
+  let balance = bond.principal;
+
+  for (let i = 1; i <= deferralPeriods; i++) {
+    const interest = balance * periodRate;
+    const m = bond.startMonth + Math.round(i * monthsPerPeriod);
+    if (m < H) {
+      if (bond.capitalizeInterest) {
+        flows.capitalized[m] += interest;
+        balance += interest;
+      } else {
+        flows.interestCash[m] += interest;
+      }
+    } else if (bond.capitalizeInterest) {
+      balance += interest;
+    }
+  }
+
+  const remainingPeriods = totalPeriods - deferralPeriods;
+  const linearPrincipal =
+    bond.amortization === "linear" && remainingPeriods > 0 ? balance / remainingPeriods : 0;
+
+  for (let j = 1; j <= remainingPeriods; j++) {
+    const interest = balance * periodRate;
+    let principalRepaid = 0;
+    if (bond.amortization === "bullet") {
+      principalRepaid = j === remainingPeriods ? balance : 0;
+    } else {
+      principalRepaid = j === remainingPeriods ? balance : linearPrincipal;
+    }
+    balance -= principalRepaid;
+    if (Math.abs(balance) < 0.005) balance = 0;
+    const m = bond.startMonth + Math.round((deferralPeriods + j) * monthsPerPeriod);
+    if (m < H) {
+      flows.interestCash[m] += interest;
+      flows.principalCash[m] += principalRepaid;
+    }
+  }
+}
+
+export function computeFinanceFlows(p: ModelParams, H: number): FinanceFlows {
+  const flows = emptyFlows(H);
+  const fin = p.financing;
+  for (const eq of fin.equity ?? []) {
+    if (eq.startMonth < H) flows.inflow[eq.startMonth] += eq.amount;
+  }
+  for (const loan of fin.loans ?? []) {
+    loanFlows(loan, flows, H);
+  }
+  for (const bond of fin.bonds ?? []) {
+    bondFlows(bond, flows, H);
+  }
+  return flows;
+}
 
 const FY_LEN = 12;
 
@@ -188,6 +288,8 @@ export function computeModel(p: ModelParams): ModelResult {
   const totalCapex = p.capex.equipment + p.capex.travaux + p.capex.juridique + p.capex.depots;
   const monthlyDA = p.tax.enableDA ? totalCapex / (p.tax.daYears * 12) : 0;
 
+  const finFlows = computeFinanceFlows(p, H);
+
   const monthly: MonthlyComputed[] = [];
   let cash = p.openingCash;
   let prevBfr = 0;
@@ -202,7 +304,7 @@ export function computeModel(p: ModelParams): ModelResult {
 
     const da = monthlyDA;
     const ebit = ebitda - da;
-    const interestExpense = m < p.financing.bondDurationMonths ? p.financing.bondMonthly : 0;
+    const interestExpense = finFlows.interestCash[m] + finFlows.capitalized[m];
     const pbt = ebit - interestExpense;
     const tax = p.tax.enableIs && pbt > 0 ? pbt * p.tax.isRate : 0;
     const netIncome = pbt - tax;
@@ -214,10 +316,10 @@ export function computeModel(p: ModelParams): ModelResult {
 
     const cfo = ebitda - tax - bfrChange;
     const cfi = -capexThis;
-    const fundraise = m === 0 ? p.financing.fundraise : 0;
-    const loanRepay = m < p.financing.loanDurationMonths ? p.financing.loanMonthly : 0;
-    const bondPrincipal = m < p.financing.bondDurationMonths ? p.financing.bondCapitalRepayMonthly : 0;
-    const cff = fundraise - loanRepay - bondPrincipal - interestExpense;
+    const fundraise = finFlows.inflow[m];
+    const loanRepay = finFlows.principalCash[m];
+    const bondPrincipal = 0; // déjà inclus dans loanRepay (principalCash agrège loans + bonds)
+    const cff = fundraise - loanRepay - finFlows.interestCash[m];
 
     const netCashFlow = cfo + cfi + cff;
     cash += netCashFlow;

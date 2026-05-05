@@ -58,6 +58,35 @@ export function effectiveMonthlyHours(pool: FreelancePool): number {
   return pool.monthlyHours;
 }
 
+export type BondIssue = {
+  id: string;
+  name: string;
+  principal: number;
+  annualRatePct: number;
+  termYears: number;
+  frequency: 1 | 2 | 4; // annuel, semestriel, trimestriel
+  amortization: "bullet" | "linear";
+  deferralYears: number;
+  capitalizeInterest: boolean;       // PIK pendant différé
+  startMonth: number;                // 0..horizonMonths-1, défaut 0
+};
+
+export type LoanLine = {
+  id: string;
+  name: string;
+  principal: number;
+  annualRatePct: number;
+  termMonths: number;
+  startMonth: number;
+};
+
+export type EquityLine = {
+  id: string;
+  name: string;
+  amount: number;
+  startMonth: number;
+};
+
 export type RecurringExpense = {
   id: string;
   name: string;
@@ -131,12 +160,20 @@ export type ModelParams = {
   capex: { equipment: number; travaux: number; juridique: number; depots: number };
 
   financing: {
-    fundraise: number;
-    loanMonthly: number;
-    loanDurationMonths: number;
-    bondMonthly: number;
-    bondCapitalRepayMonthly: number;
-    bondDurationMonths: number;
+    // Apports / equity (M0 ou en plusieurs tranches)
+    equity: EquityLine[];
+    // Emprunts bancaires amortissables
+    loans: LoanLine[];
+    // Émissions obligataires (peuvent être multiples)
+    bonds: BondIssue[];
+
+    // Legacy (lecture seule, conservés pour normalisation depuis anciens scénarios)
+    fundraise?: number;
+    loanMonthly?: number;
+    loanDurationMonths?: number;
+    bondMonthly?: number;
+    bondCapitalRepayMonthly?: number;
+    bondDurationMonths?: number;
   };
 
   tax: {
@@ -267,6 +304,49 @@ export function normalizeParams(p: any): ModelParams {
     rentArr = rentArr.slice(0, timeline.horizonYears);
   }
 
+  // Financing migration
+  const fin = p.financing ?? {};
+  const equity: EquityLine[] = Array.isArray(fin.equity)
+    ? fin.equity
+    : fin.fundraise
+    ? [{ id: "legacy_eq", name: "Levée de fonds", amount: fin.fundraise, startMonth: 0 }]
+    : [];
+
+  const loans: LoanLine[] = Array.isArray(fin.loans)
+    ? fin.loans
+    : fin.loanMonthly && fin.loanDurationMonths
+    ? [
+        // Reverse-engineer principal from monthly + duration assuming ~3% rate
+        {
+          id: "legacy_loan",
+          name: "Emprunt bancaire",
+          principal: fin.loanMonthly * fin.loanDurationMonths * 0.93,
+          annualRatePct: 3,
+          termMonths: fin.loanDurationMonths,
+          startMonth: 0,
+        },
+      ]
+    : [];
+
+  const bonds: BondIssue[] = Array.isArray(fin.bonds)
+    ? fin.bonds
+    : fin.bondMonthly && fin.bondDurationMonths
+    ? [
+        {
+          id: "legacy_bond",
+          name: "Obligation",
+          principal: (fin.bondCapitalRepayMonthly ?? 6666.67) * fin.bondDurationMonths,
+          annualRatePct: ((fin.bondMonthly * 12) / ((fin.bondCapitalRepayMonthly ?? 6666.67) * fin.bondDurationMonths)) * 100,
+          termYears: fin.bondDurationMonths / 12,
+          frequency: 12,
+          amortization: "linear" as const,
+          deferralYears: 0,
+          capitalizeInterest: false,
+          startMonth: 0,
+        } as unknown as BondIssue,
+      ]
+    : [];
+
   return {
     ...p,
     timeline,
@@ -283,5 +363,6 @@ export function normalizeParams(p: any): ModelParams {
       ...p.salaries,
       freelancePools: p.salaries?.freelancePools ?? [],
     },
+    financing: { ...fin, equity, loans, bonds },
   };
 }

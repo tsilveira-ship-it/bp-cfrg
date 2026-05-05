@@ -855,16 +855,24 @@ export default function ParametersPage() {
 
         <AccordionItem value="financing" className="border rounded-lg bg-card">
           <AccordionTrigger className="px-6 hover:no-underline">
-            <div className="font-semibold text-left">Financement (levée, emprunt, obligations)</div>
+            <div className="text-left">
+              <div className="font-semibold">Financement</div>
+              <div className="text-xs text-muted-foreground font-normal">
+                Édition complète sur la page <span className="font-mono">/financing</span>
+              </div>
+            </div>
           </AccordionTrigger>
           <AccordionContent className="px-6 pb-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <ParamNumber path="financing.fundraise" label="Levée de fonds (M0)" value={params.financing.fundraise} unit="€" />
-              <ParamNumber path="financing.loanMonthly" label="Mensualité emprunt" value={params.financing.loanMonthly} unit="€" />
-              <ParamNumber path="financing.loanDurationMonths" label="Durée emprunt" value={params.financing.loanDurationMonths} unit="mois" />
-              <ParamNumber path="financing.bondMonthly" label="Coupon obligation / mois" value={params.financing.bondMonthly} unit="€" />
-              <ParamNumber path="financing.bondCapitalRepayMonthly" label="Remb. capital obligation" value={params.financing.bondCapitalRepayMonthly} unit="€" />
-              <ParamNumber path="financing.bondDurationMonths" label="Durée obligation" value={params.financing.bondDurationMonths} unit="mois" />
+            <div className="text-sm text-muted-foreground space-y-2">
+              <p>
+                Apport / emprunts / obligations sont édités sur la page dédiée Financement, qui inclut
+                le simulateur d&apos;échéancier.
+              </p>
+              <ul className="text-xs list-disc pl-5 space-y-1">
+                <li>{(params.financing.equity ?? []).length} ligne(s) d&apos;apport / equity</li>
+                <li>{(params.financing.loans ?? []).length} emprunt(s) bancaire(s)</li>
+                <li>{(params.financing.bonds ?? []).length} émission(s) obligataire(s)</li>
+              </ul>
             </div>
           </AccordionContent>
         </AccordionItem>
