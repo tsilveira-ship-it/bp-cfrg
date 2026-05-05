@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/accordion";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
 import { SubsEvolutionEditor } from "@/components/subs-evolution-editor";
+import { SectionHeader } from "@/components/section-header";
+import { StartMonthPicker } from "@/components/start-month-picker";
 import { Trash2, Plus } from "lucide-react";
 import { fmtPct, fmtCurrency } from "@/lib/format";
 
@@ -112,6 +114,12 @@ export default function ParametersPage() {
             </div>
           </AccordionContent>
         </AccordionItem>
+
+        <SectionHeader
+          title="Recettes"
+          description="Sources de revenus du business plan"
+          color="green"
+        />
 
         <AccordionItem value="subs" className="border rounded-lg bg-card">
           <AccordionTrigger className="px-6 hover:no-underline">
@@ -307,6 +315,12 @@ export default function ParametersPage() {
           </AccordionContent>
         </AccordionItem>
 
+        <SectionHeader
+          title="Charges"
+          description="Coûts opérationnels — salaires, locaux, fournisseurs"
+          color="red"
+        />
+
         <AccordionItem value="salaries" className="border rounded-lg bg-card">
           <AccordionTrigger className="px-6 hover:no-underline">
             <div className="text-left">
@@ -413,20 +427,16 @@ export default function ParametersPage() {
                       }
                     />
                   </div>
-                  <div className="md:col-span-2">
-                    <Label className="text-xs">Démarre au mois</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      max="59"
+                  <div className="md:col-span-3">
+                    <StartMonthPicker
                       value={it.startMonth}
-                      onChange={(e) =>
+                      onChange={(n) =>
                         setParams((p) => ({
                           ...p,
                           salaries: {
                             ...p.salaries,
                             items: p.salaries.items.map((s, i) =>
-                              i === idx ? { ...s, startMonth: parseInt(e.target.value || "0") } : s
+                              i === idx ? { ...s, startMonth: n } : s
                             ),
                           },
                         }))
@@ -831,6 +841,12 @@ export default function ParametersPage() {
           </AccordionContent>
         </AccordionItem>
 
+        <SectionHeader
+          title="Investissement & Financement"
+          description="CAPEX initial + apports/emprunts/obligations"
+          color="blue"
+        />
+
         <AccordionItem value="capex" className="border rounded-lg bg-card">
           <AccordionTrigger className="px-6 hover:no-underline">
             <div className="font-semibold text-left">CAPEX & investissement initial</div>
@@ -877,6 +893,12 @@ export default function ParametersPage() {
           </AccordionContent>
         </AccordionItem>
 
+        <SectionHeader
+          title="Fiscalité"
+          description="Impôt sur les sociétés, amortissements, BFR"
+          color="amber"
+        />
+
         <AccordionItem value="tax" className="border rounded-lg bg-card">
           <AccordionTrigger className="px-6 hover:no-underline">
             <div className="font-semibold text-left">Fiscalité & comptabilité</div>
@@ -909,6 +931,12 @@ export default function ParametersPage() {
             </div>
           </AccordionContent>
         </AccordionItem>
+
+        <SectionHeader
+          title="Charges (suite)"
+          description="Prestataires ponctuels"
+          color="red"
+        />
 
         <AccordionItem value="oneoff" className="border rounded-lg bg-card">
           <AccordionTrigger className="px-6 hover:no-underline">
