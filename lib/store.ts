@@ -58,6 +58,23 @@ export const useModelStore = create<Store>()(
       reset: () =>
         set(() => ({ params: DEFAULT_PARAMS, scenario: "base", loaded: { kind: "none" } })),
     }),
-    { name: "cfrg-bp-params-v2" }
+    {
+      name: "cfrg-bp-params-v3",
+      version: 3,
+      migrate: (persisted: any) => {
+        if (!persisted || !persisted.params) {
+          return { params: DEFAULT_PARAMS, scenario: "base", loaded: { kind: "none" } };
+        }
+        return {
+          ...persisted,
+          params: normalizeParams(persisted.params),
+        };
+      },
+      onRehydrateStorage: () => (state) => {
+        if (state && state.params) {
+          state.params = normalizeParams(state.params);
+        }
+      },
+    }
   )
 );
