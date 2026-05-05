@@ -54,78 +54,88 @@ export default function ParametersPage() {
                 </span>
               </div>
               <div className="space-y-3">
-                {params.subs.tiers.map((tier, idx) => (
-                  <div key={tier.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end p-3 border rounded-md bg-muted/30">
-                    <div className="md:col-span-4">
-                      <Label className="text-xs">Nom</Label>
-                      <Input
-                        value={tier.name}
-                        onChange={(e) =>
-                          setParams((p) => ({
-                            ...p,
-                            subs: {
-                              ...p.subs,
-                              tiers: p.subs.tiers.map((t, i) => (i === idx ? { ...t, name: e.target.value } : t)),
-                            },
-                          }))
-                        }
-                      />
+                {params.subs.tiers.map((tier, idx) => {
+                  const vatDivisor = 1 + (params.subs.vatRate ?? 0);
+                  const priceHT = tier.monthlyPrice / vatDivisor;
+                  return (
+                    <div key={tier.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end p-3 border rounded-md bg-muted/30">
+                      <div className="md:col-span-4">
+                        <Label className="text-xs">Nom</Label>
+                        <Input
+                          value={tier.name}
+                          onChange={(e) =>
+                            setParams((p) => ({
+                              ...p,
+                              subs: {
+                                ...p.subs,
+                                tiers: p.subs.tiers.map((t, i) => (i === idx ? { ...t, name: e.target.value } : t)),
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <Label className="text-xs">Prix TTC (€)</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={tier.monthlyPrice}
+                          onChange={(e) =>
+                            setParams((p) => ({
+                              ...p,
+                              subs: {
+                                ...p.subs,
+                                tiers: p.subs.tiers.map((t, i) =>
+                                  i === idx ? { ...t, monthlyPrice: parseFloat(e.target.value) || 0 } : t
+                                ),
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <Label className="text-xs text-muted-foreground">Prix HT (€)</Label>
+                        <div className="h-9 px-3 flex items-center rounded-md border bg-muted/40 text-sm font-mono">
+                          {priceHT.toFixed(2)}
+                        </div>
+                      </div>
+                      <div className="md:col-span-2">
+                        <Label className="text-xs">Mix (%)</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={tier.mixPct * 100}
+                          onChange={(e) =>
+                            setParams((p) => ({
+                              ...p,
+                              subs: {
+                                ...p.subs,
+                                tiers: p.subs.tiers.map((t, i) =>
+                                  i === idx ? { ...t, mixPct: (parseFloat(e.target.value) || 0) / 100 } : t
+                                ),
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="md:col-span-2 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600"
+                          onClick={() =>
+                            setParams((p) => ({
+                              ...p,
+                              subs: { ...p.subs, tiers: p.subs.tiers.filter((_, i) => i !== idx) },
+                            }))
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="md:col-span-3">
-                      <Label className="text-xs">Prix mensuel (€)</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={tier.monthlyPrice}
-                        onChange={(e) =>
-                          setParams((p) => ({
-                            ...p,
-                            subs: {
-                              ...p.subs,
-                              tiers: p.subs.tiers.map((t, i) =>
-                                i === idx ? { ...t, monthlyPrice: parseFloat(e.target.value) || 0 } : t
-                              ),
-                            },
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="md:col-span-3">
-                      <Label className="text-xs">Mix (%)</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={tier.mixPct * 100}
-                        onChange={(e) =>
-                          setParams((p) => ({
-                            ...p,
-                            subs: {
-                              ...p.subs,
-                              tiers: p.subs.tiers.map((t, i) =>
-                                i === idx ? { ...t, mixPct: (parseFloat(e.target.value) || 0) / 100 } : t
-                              ),
-                            },
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-600"
-                        onClick={() =>
-                          setParams((p) => ({
-                            ...p,
-                            subs: { ...p.subs, tiers: p.subs.tiers.filter((_, i) => i !== idx) },
-                          }))
-                        }
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
                 <Button
                   variant="outline"
                   size="sm"
@@ -153,6 +163,14 @@ export default function ParametersPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <ParamNumber
+                path="subs.vatRate"
+                label="TVA"
+                value={params.subs.vatRate ?? 0.20}
+                unit="%"
+                step={0.5}
+                hint="Modèle CA = HT = TTC ÷ (1+TVA)"
+              />
               <ParamNumber
                 path="subs.rampStartCount"
                 label="Nouveaux abos Sept 2025"

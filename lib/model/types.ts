@@ -45,6 +45,7 @@ export type ModelParams = {
   // Revenue: new subscriptions
   subs: {
     tiers: SubscriptionTier[];
+    vatRate: number; // TVA, ex: 0.20. Revenue model uses HT = TTC / (1+vatRate)
     rampStartCount: number; // total new subs in Sept 25
     rampEndCount: number; // total new subs in Aug 26 (last month FY25)
     fy26GrowthPct: number;

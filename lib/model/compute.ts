@@ -53,11 +53,14 @@ function monthlySubsCount(p: ModelParams): number[] {
 // Simpler: use the count itself as monthly NEW subscriptions; but xlsx uses count as monthly billed members.
 // We treat the array as "monthly billed new members" (cohort already included).
 function monthlySubsRevenue(p: ModelParams, counts: number[]): number[] {
-  const basePrice = avgSubPrice(p.subs.tiers);
+  // tiers.monthlyPrice is TTC; revenue model uses HT = TTC / (1+vatRate)
+  const basePriceTTC = avgSubPrice(p.subs.tiers);
+  const vatDivisor = 1 + (p.subs.vatRate ?? 0);
+  const basePriceHT = basePriceTTC / vatDivisor;
   return counts.map((c, m) => {
     const fy = fyOfMonth(m);
     const priceFactor = Math.pow(1 + p.subs.priceIndexPa, fy);
-    return c * basePrice * priceFactor;
+    return c * basePriceHT * priceFactor;
   });
 }
 

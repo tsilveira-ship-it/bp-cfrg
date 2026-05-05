@@ -13,18 +13,20 @@ export default function RevenuePage() {
   const result = useMemo(() => computeModel(params), [params]);
 
   const revPerTier = useMemo(() => {
+    const vatDivisor = 1 + (params.subs.vatRate ?? 0);
     return params.subs.tiers.map((tier) => {
+      const priceHT = tier.monthlyPrice / vatDivisor;
       const yearlyRev = result.yearly.map((y, fy) => {
         const monthsInFy = result.monthly.filter((m) => m.fy === fy);
         const sum = monthsInFy.reduce((s, m) => {
           const priceFactor = Math.pow(1 + params.subs.priceIndexPa, fy);
-          return s + m.subsCount * tier.mixPct * tier.monthlyPrice * priceFactor;
+          return s + m.subsCount * tier.mixPct * priceHT * priceFactor;
         }, 0);
         return sum;
       });
-      return { tier, yearlyRev };
+      return { tier, yearlyRev, priceHT };
     });
-  }, [params.subs.tiers, params.subs.priceIndexPa, result]);
+  }, [params.subs.tiers, params.subs.priceIndexPa, params.subs.vatRate, result]);
 
   const membersData = result.monthly.map((m) => ({
     label: m.label,
@@ -79,7 +81,8 @@ export default function RevenuePage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Tier</TableHead>
-                <TableHead className="text-right">Prix</TableHead>
+                <TableHead className="text-right">TTC</TableHead>
+                <TableHead className="text-right">HT</TableHead>
                 <TableHead className="text-right">Mix</TableHead>
                 <TableHead className="text-right">FY25</TableHead>
                 <TableHead className="text-right">FY26</TableHead>
@@ -89,10 +92,11 @@ export default function RevenuePage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {revPerTier.map(({ tier, yearlyRev }) => (
+              {revPerTier.map(({ tier, yearlyRev, priceHT }) => (
                 <TableRow key={tier.id}>
                   <TableCell className="font-medium">{tier.name}</TableCell>
                   <TableCell className="text-right">{fmtCurrency(tier.monthlyPrice, { decimals: 2 })}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">{fmtCurrency(priceHT, { decimals: 2 })}</TableCell>
                   <TableCell className="text-right">{fmtPct(tier.mixPct)}</TableCell>
                   {yearlyRev.map((v, i) => (
                     <TableCell key={i} className="text-right">{fmtCurrency(v, { compact: true })}</TableCell>
@@ -100,37 +104,37 @@ export default function RevenuePage() {
                 </TableRow>
               ))}
               <TableRow className="font-semibold border-t-2">
-                <TableCell colSpan={3}>Total nouveaux abonnements</TableCell>
+                <TableCell colSpan={4}>Total nouveaux abonnements (HT)</TableCell>
                 {result.yearly.map((y, i) => (
                   <TableCell key={i} className="text-right">{fmtCurrency(y.subsRevenue, { compact: true })}</TableCell>
                 ))}
               </TableRow>
               <TableRow>
-                <TableCell colSpan={3} className="text-muted-foreground">Legacy Javelot</TableCell>
+                <TableCell colSpan={4} className="text-muted-foreground">Legacy Javelot</TableCell>
                 {result.yearly.map((y, i) => (
                   <TableCell key={i} className="text-right">{fmtCurrency(y.legacyRevenue, { compact: true })}</TableCell>
                 ))}
               </TableRow>
               <TableRow>
-                <TableCell colSpan={3} className="text-muted-foreground">Prestations complémentaires</TableCell>
+                <TableCell colSpan={4} className="text-muted-foreground">Prestations complémentaires</TableCell>
                 {result.yearly.map((y, i) => (
                   <TableCell key={i} className="text-right">{fmtCurrency(y.prestationsRevenue, { compact: true })}</TableCell>
                 ))}
               </TableRow>
               <TableRow>
-                <TableCell colSpan={3} className="text-muted-foreground">Merchandising</TableCell>
+                <TableCell colSpan={4} className="text-muted-foreground">Merchandising</TableCell>
                 {result.yearly.map((y, i) => (
                   <TableCell key={i} className="text-right">{fmtCurrency(y.merchRevenue, { compact: true })}</TableCell>
                 ))}
               </TableRow>
               <TableRow className="font-bold border-t-2 bg-muted/30">
-                <TableCell colSpan={3}>CA Total</TableCell>
+                <TableCell colSpan={4}>CA Total</TableCell>
                 {result.yearly.map((y, i) => (
                   <TableCell key={i} className="text-right">{fmtCurrency(y.totalRevenue, { compact: true })}</TableCell>
                 ))}
               </TableRow>
               <TableRow className="text-xs text-muted-foreground">
-                <TableCell colSpan={3}>Croissance</TableCell>
+                <TableCell colSpan={4}>Croissance</TableCell>
                 {result.yearly.map((y, i) => (
                   <TableCell key={i} className="text-right">{i === 0 ? "—" : fmtPct(y.growthPct)}</TableCell>
                 ))}

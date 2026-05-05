@@ -10,6 +10,7 @@ export const DEFAULT_PARAMS: ModelParams = {
       { id: "s8",   name: "Abo 8 séances", monthlyPrice: 100.0, mixPct: 0.20 },
       { id: "s4",   name: "Abo 4 séances", monthlyPrice: 70.83, mixPct: 0.10 },
     ],
+    vatRate: 0.20,
     rampStartCount: 80,    // Sept 2025 nouveaux abos
     rampEndCount: 200,     // Août 2026
     fy26GrowthPct: 0.40,   // doubles in counts but xlsx shows ~+30% sustained — calibrated below
