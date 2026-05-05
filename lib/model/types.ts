@@ -26,6 +26,14 @@ export type SalaryItem = {
   fy26Bump?: number; // explicit FY26 monthly value override
 };
 
+export type FreelancePool = {
+  id: string;
+  name: string;
+  hourlyRate: number;
+  monthlyHours: number; // negative = deduction (heures incluses dans cadres)
+  startMonth?: number; // 0..59
+};
+
 export type RecurringExpense = {
   id: string;
   name: string;
@@ -72,9 +80,10 @@ export type ModelParams = {
   // Merchandising
   merch: { monthlyMargin: number; growthPa: number };
 
-  // Salaries
+  // Salaries (cadres + freelance coaching)
   salaries: {
     items: SalaryItem[];
+    freelancePools: FreelancePool[];
     annualIndexPa: number; // % annual réévaluation (applied each new FY)
     chargesPatroPct: number; // already included in monthlyGross? if yes set 0
   };

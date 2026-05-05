@@ -99,18 +99,22 @@ function monthlyMerch(p: ModelParams): number[] {
 
 function monthlySalaries(p: ModelParams): number[] {
   const out = new Array<number>(HORIZON_MONTHS).fill(0);
+  const pools = p.salaries.freelancePools ?? [];
   for (let m = 0; m < HORIZON_MONTHS; m++) {
     const fy = fyOfMonth(m);
+    const idx = Math.pow(1 + p.salaries.annualIndexPa, Math.max(0, fy - 1));
     let total = 0;
+    // Cadres salariés
     for (const item of p.salaries.items) {
       if (m < item.startMonth) continue;
-      // FY25 = base, FY26 use fy26Bump if present, then index
       let base = item.monthlyGross;
       if (fy >= 1 && item.fy26Bump !== undefined) base = item.fy26Bump;
-      const indexFactor = fy >= 2 ? Math.pow(1 + p.salaries.annualIndexPa, fy - 1) : (fy === 1 && item.fy26Bump !== undefined ? 1 : 1 + (p.salaries.annualIndexPa * Math.max(0, fy)));
-      // Cleaner: apply annualIndexPa starting FY26 cumulative on the base/bump
-      const idx = Math.pow(1 + p.salaries.annualIndexPa, Math.max(0, fy - 1));
       total += base * idx * item.fte * (1 + p.salaries.chargesPatroPct);
+    }
+    // Freelance coaching pools
+    for (const pool of pools) {
+      if (pool.startMonth !== undefined && m < pool.startMonth) continue;
+      total += pool.hourlyRate * pool.monthlyHours * idx;
     }
     out[m] = total;
   }

@@ -393,8 +393,130 @@ export default function ParametersPage() {
                   }))
                 }
               >
-                <Plus className="h-4 w-4 mr-1" /> Ajouter un poste
+                <Plus className="h-4 w-4 mr-1" /> Ajouter un poste cadre
               </Button>
+            </div>
+
+            <div className="pt-6 border-t">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h4 className="font-heading text-sm font-semibold uppercase tracking-wider">
+                    Coachs freelance (heures facturées)
+                  </h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Heures négatives = heures incluses dans salaire cadre (déduction).
+                  </p>
+                </div>
+                <span className="text-xs font-mono text-muted-foreground">
+                  Net: {fmtCurrency((params.salaries.freelancePools ?? []).reduce((s, p) => s + p.hourlyRate * p.monthlyHours, 0))}/mo
+                </span>
+              </div>
+              <div className="space-y-2">
+                {(params.salaries.freelancePools ?? []).map((pool, idx) => {
+                  const total = pool.hourlyRate * pool.monthlyHours;
+                  return (
+                    <div key={pool.id} className="grid grid-cols-12 gap-2 items-end p-3 border rounded-md bg-muted/20">
+                      <div className="col-span-12 md:col-span-5">
+                        <Label className="text-xs">Pool</Label>
+                        <Input
+                          value={pool.name}
+                          onChange={(e) =>
+                            setParams((p) => ({
+                              ...p,
+                              salaries: {
+                                ...p.salaries,
+                                freelancePools: (p.salaries.freelancePools ?? []).map((x, i) =>
+                                  i === idx ? { ...x, name: e.target.value } : x
+                                ),
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="col-span-4 md:col-span-2">
+                        <Label className="text-xs">Tarif (€/h)</Label>
+                        <Input
+                          type="number"
+                          step="0.5"
+                          value={pool.hourlyRate}
+                          onChange={(e) =>
+                            setParams((p) => ({
+                              ...p,
+                              salaries: {
+                                ...p.salaries,
+                                freelancePools: (p.salaries.freelancePools ?? []).map((x, i) =>
+                                  i === idx ? { ...x, hourlyRate: parseFloat(e.target.value) || 0 } : x
+                                ),
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="col-span-4 md:col-span-2">
+                        <Label className="text-xs">Heures/mo</Label>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          value={pool.monthlyHours}
+                          onChange={(e) =>
+                            setParams((p) => ({
+                              ...p,
+                              salaries: {
+                                ...p.salaries,
+                                freelancePools: (p.salaries.freelancePools ?? []).map((x, i) =>
+                                  i === idx ? { ...x, monthlyHours: parseFloat(e.target.value) || 0 } : x
+                                ),
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="col-span-3 md:col-span-2 text-right">
+                        <Label className="text-xs text-muted-foreground">Coût/mo</Label>
+                        <div className={"h-9 px-3 flex items-center justify-end rounded-md border bg-muted/40 text-xs font-mono " + (total < 0 ? "text-red-600" : "")}>
+                          {fmtCurrency(total)}
+                        </div>
+                      </div>
+                      <div className="col-span-1 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600"
+                          onClick={() =>
+                            setParams((p) => ({
+                              ...p,
+                              salaries: {
+                                ...p.salaries,
+                                freelancePools: (p.salaries.freelancePools ?? []).filter((_, i) => i !== idx),
+                              },
+                            }))
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setParams((p) => ({
+                      ...p,
+                      salaries: {
+                        ...p.salaries,
+                        freelancePools: [
+                          ...(p.salaries.freelancePools ?? []),
+                          { id: `pool_${Date.now()}`, name: "Nouveau pool", hourlyRate: 25, monthlyHours: 0 },
+                        ],
+                      },
+                    }))
+                  }
+                >
+                  <Plus className="h-4 w-4 mr-1" /> Ajouter un pool freelance
+                </Button>
+              </div>
             </div>
           </AccordionContent>
         </AccordionItem>

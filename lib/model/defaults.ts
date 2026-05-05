@@ -40,7 +40,16 @@ export const DEFAULT_PARAMS: ModelParams = {
       { id: "headcoach", role: "Headcoach", monthlyGross: 3300, fte: 2, startMonth: 0, fy26Bump: 4240 },
       { id: "associes", role: "Associés gérants", monthlyGross: 3300, fte: 2, startMonth: 0 },
     ],
-    annualIndexPa: 0.0, // user can crank up
+    freelancePools: [
+      { id: "floor_cfrg", name: "Floor CFRG", hourlyRate: 25, monthlyHours: 206.4 },
+      { id: "floor_hyrox", name: "Floor Hyrox", hourlyRate: 25, monthlyHours: 146.2 },
+      { id: "floor_sandbox", name: "Floor sandbox", hourlyRate: 25, monthlyHours: 10.32 },
+      { id: "cadre_coaching", name: "Cours inclus dans 2 headcoach cadre", hourlyRate: 25, monthlyHours: -43 },
+      { id: "accueil", name: "Espace accueil", hourlyRate: 20, monthlyHours: 206.4 },
+      { id: "entretiens_com", name: "Entretiens (commercial)", hourlyRate: 25, monthlyHours: 90 },
+      { id: "cadre_entretiens", name: "Entretiens inclus dans 2 headcoach cadre", hourlyRate: 25, monthlyHours: -51.6 },
+    ],
+    annualIndexPa: 0.0,
     chargesPatroPct: 0,
   },
 
