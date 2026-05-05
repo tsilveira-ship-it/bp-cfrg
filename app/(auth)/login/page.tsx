@@ -35,9 +35,19 @@ function LoginInner() {
           </div>
         </div>
 
-        {error && (
+        {error === "not_authorized" && (
+          <div className="p-3 rounded-md bg-amber-50 border border-amber-200 text-sm text-amber-800">
+            Cet email n&apos;a pas encore accès. Demande à un admin de t&apos;inviter, puis réessaie.
+          </div>
+        )}
+        {error === "auth_failed" && (
           <div className="p-3 rounded-md bg-red-50 border border-red-200 text-sm text-red-700">
-            Échec de connexion. Réessayer.
+            Échec d&apos;authentification Google. Réessayer.
+          </div>
+        )}
+        {error && error !== "not_authorized" && error !== "auth_failed" && (
+          <div className="p-3 rounded-md bg-red-50 border border-red-200 text-sm text-red-700">
+            Erreur: {error}
           </div>
         )}
 
