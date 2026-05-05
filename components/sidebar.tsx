@@ -11,6 +11,7 @@ import {
   ShieldAlert,
   CalendarRange,
   FolderOpen,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "@/components/user-menu";
@@ -26,7 +27,7 @@ const NAV = [
   { href: "/audit", label: "Audit & risques", icon: ShieldAlert },
 ];
 
-export function Sidebar() {
+export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname();
   return (
     <aside className="hidden md:flex md:w-64 flex-col border-r bg-sidebar text-sidebar-foreground">
@@ -52,7 +53,7 @@ export function Sidebar() {
         </div>
       </div>
       <nav className="flex-1 p-3 space-y-1">
-        {NAV.map((it) => {
+        {[...NAV, ...(isAdmin ? [{ href: "/admin", label: "Administration", icon: ShieldCheck }] : [])].map((it) => {
           const Icon = it.icon;
           const active = pathname === it.href;
           return (

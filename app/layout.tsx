@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import { Montserrat, Oswald, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { Sidebar } from "@/components/sidebar";
 import { Toaster } from "@/components/ui/sonner";
-import { ActiveScenarioLoader } from "@/components/active-scenario-loader";
 
 const montserrat = Montserrat({
   variable: "--font-montserrat",
@@ -42,13 +40,7 @@ export default function RootLayout({
       className={`${montserrat.variable} ${oswald.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full font-body">
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <main className="flex-1 overflow-x-auto">
-            <div className="mx-auto w-full max-w-[1600px] p-6 lg:p-10">{children}</div>
-          </main>
-        </div>
-        <ActiveScenarioLoader />
+        {children}
         <Toaster />
       </body>
     </html>
