@@ -5,6 +5,7 @@ import { AlertCircle } from "lucide-react";
 import { decodeToken } from "@/lib/share-token";
 import { computeModel } from "@/lib/model/compute";
 import { fmtCurrency, fmtPct } from "@/lib/format";
+import { activeToggles, topKeyHypotheses } from "@/lib/key-hypotheses";
 
 export default function InvestorViewPage() {
   return (
@@ -214,7 +215,67 @@ function InvestorViewClient() {
 
         <section>
           <h2 className="text-xs uppercase tracking-widest text-muted-foreground font-bold mb-3">
-            Hypothèses clés
+            Top 10 hypothèses critiques
+          </h2>
+          <div className="rounded-md border bg-card overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/30">
+                <tr>
+                  <th className="text-left p-2 w-8">#</th>
+                  <th className="text-left p-2">Hypothèse</th>
+                  <th className="text-right p-2">Valeur</th>
+                  <th className="text-left p-2">Contexte</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topKeyHypotheses(params, 10).map((h) => (
+                  <tr key={h.rank} className="border-t">
+                    <td className="p-2 font-bold text-[#D32F2F]">{h.rank}</td>
+                    <td className="p-2 font-medium">{h.label}</td>
+                    <td className="p-2 text-right font-mono font-semibold">{h.value}</td>
+                    <td className="p-2 text-muted-foreground italic">{h.rationale}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-xs uppercase tracking-widest text-muted-foreground font-bold mb-3">
+            Configuration du modèle
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {activeToggles(params).map((t) => (
+              <div
+                key={t.key}
+                className={
+                  "rounded border p-2 text-xs " +
+                  (t.on
+                    ? "bg-emerald-50/40 border-emerald-300"
+                    : "bg-muted/20 border-muted text-muted-foreground")
+                }
+              >
+                <div className="flex items-center gap-1.5">
+                  <div
+                    className={
+                      "h-1.5 w-1.5 rounded-full " + (t.on ? "bg-emerald-500" : "bg-muted-foreground/40")
+                    }
+                  />
+                  <span className="font-medium">{t.label}</span>
+                </div>
+                {t.hint && <div className="text-[10px] text-muted-foreground mt-0.5 ml-3">{t.hint}</div>}
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-2 italic">
+            Pastille verte = toggle activé dans le scénario. Tout calcul reflète cet état.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="text-xs uppercase tracking-widest text-muted-foreground font-bold mb-3">
+            Hypothèses clés (synthèse)
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
             <Hypo label="Démarrage" value={`Sept ${params.timeline.startYear} (FY${params.timeline.startYear % 100})`} />
@@ -250,9 +311,23 @@ function InvestorViewClient() {
           </div>
         </section>
 
-        <footer className="text-[10px] text-muted-foreground text-center pt-8 pb-4">
-          Document confidentiel destiné à <b>{investorName}</b>. Toute reproduction interdite sans
-          autorisation écrite.
+        <footer className="text-[10px] text-muted-foreground text-center pt-8 pb-4 space-y-2">
+          <div>
+            Document confidentiel destiné à <b>{investorName}</b>. Toute reproduction interdite sans
+            autorisation écrite.
+          </div>
+          <div className="text-muted-foreground/70">
+            Méthodologie open-source — moteur de calcul public sur{" "}
+            <a
+              href="https://github.com/tsilveira-ship-it/bp-cfrg"
+              target="_blank"
+              rel="noreferrer noopener"
+              className="underline hover:text-foreground"
+            >
+              github.com/tsilveira-ship-it/bp-cfrg
+            </a>
+            . Auditer les formules: <span className="font-mono">lib/model/compute.ts</span>.
+          </div>
         </footer>
       </main>
     </div>

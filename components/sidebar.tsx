@@ -72,6 +72,7 @@ const GROUPS: Group[] = [
       { href: "/capacity", label: "Capacité", icon: Activity },
       { href: "/audit", label: "Audit & risques", icon: ShieldAlert },
       { href: "/health-check", label: "Health check", icon: HeartPulse },
+      { href: "/cross-checks", label: "Cross-checks", icon: ShieldCheck },
       { href: "/variance", label: "Variance (réel/prévu)", icon: GitCompareArrows },
       { href: "/monte-carlo", label: "Monte Carlo", icon: Dices },
     ],

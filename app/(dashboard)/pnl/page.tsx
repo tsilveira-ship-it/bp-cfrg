@@ -15,6 +15,7 @@ import { ScenarioSwitcher } from "@/components/scenario-switcher";
 import { SynthesisCard } from "@/components/synthesis-card";
 import { LineWithAnalysis } from "@/components/line-with-analysis";
 import { CollapseToggle, ExpandAllButton } from "@/components/collapse-toggle";
+import { ExcelExportButton } from "@/components/excel-export-button";
 import { useExpand } from "@/lib/use-expand";
 import {
   Table,
@@ -74,7 +75,10 @@ export default function PnlPage() {
             Income statement complet — du CA au résultat net après IS. Cliquer sur une ligne agrégée pour la détailler.
           </p>
         </div>
-        <ScenarioSwitcher />
+        <div className="flex items-center gap-2">
+          <ExcelExportButton />
+          <ScenarioSwitcher />
+        </div>
       </header>
 
       <SynthesisCard />
