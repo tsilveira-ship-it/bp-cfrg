@@ -160,6 +160,105 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
       </section>
 
       <section>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h4 className="font-heading text-sm font-semibold uppercase tracking-wider">
+              Saisonnalité & rétention
+            </h4>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Modulation mensuelle (saisonnalité) + churn cohort. Permet de modéliser creux été / pic
+              septembre.
+            </p>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setParams((p) => ({
+                  ...p,
+                  subs: {
+                    ...p.subs,
+                    seasonality: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                  },
+                }))
+              }
+              className="text-xs h-7"
+            >
+              Plat (1.0)
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setParams((p) => ({
+                  ...p,
+                  subs: {
+                    ...p.subs,
+                    seasonality: [1.20, 1.05, 1.0, 0.85, 1.15, 1.05, 1.0, 0.95, 0.90, 0.80, 0.65, 0.60],
+                  },
+                }))
+              }
+              className="text-xs h-7"
+            >
+              Standard
+            </Button>
+          </div>
+        </div>
+        <div className="grid grid-cols-6 lg:grid-cols-12 gap-1.5 mb-3">
+          {["Sept", "Oct", "Nov", "Déc", "Janv", "Févr", "Mars", "Avr", "Mai", "Juin", "Juil", "Août"].map((mlabel, idx) => {
+            const v = subs.seasonality?.[idx] ?? 1;
+            return (
+              <div key={mlabel} className="space-y-1">
+                <Label className="text-[10px] block text-center">{mlabel}</Label>
+                <Input
+                  type="number"
+                  step="0.05"
+                  className="h-8 px-1 text-xs text-center"
+                  value={v}
+                  onChange={(e) =>
+                    setParams((p) => {
+                      const arr = [...(p.subs.seasonality ?? [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])];
+                      arr[idx] = parseFloat(e.target.value) || 0;
+                      return { ...p, subs: { ...p.subs, seasonality: arr } };
+                    })
+                  }
+                />
+              </div>
+            );
+          })}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <Label className="text-xs">Churn mensuel (% nouveaux abos)</Label>
+            <div className="relative">
+              <Input
+                type="number"
+                step="0.1"
+                value={((subs.monthlyChurnPct ?? 0) * 100).toFixed(2)}
+                onChange={(e) =>
+                  patch("subs.monthlyChurnPct", (parseFloat(e.target.value) || 0) / 100)
+                }
+                className="pr-7"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1">
+              0% = pas de churn (rétention parfaite). 2-3% mensuel = standard fitness.
+            </p>
+          </div>
+          <div className="text-xs text-muted-foreground p-3 border rounded bg-muted/20">
+            Rétention équivalente:{" "}
+            <span className="font-semibold text-foreground">
+              {subs.monthlyChurnPct && subs.monthlyChurnPct > 0
+                ? `~${(1 / subs.monthlyChurnPct).toFixed(0)} mois moyens`
+                : "infini (pas de churn)"}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section>
         <div className="flex items-center gap-2 mb-2">
           <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
           <h4 className="font-heading text-sm font-semibold uppercase tracking-wider">

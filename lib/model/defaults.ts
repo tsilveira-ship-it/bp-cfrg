@@ -21,6 +21,9 @@ export const DEFAULT_PARAMS: ModelParams = {
     // 6 taux de croissance pour FY27..FY32 (post ramp-up FY26)
     growthRates: [0.40, 0.30, 0.20, 0.15, 0.10, 0.08],
     priceIndexPa: 0.0,
+    // Saisonnalité Sept..Août. Sept et janv = pics, juillet/août = creux
+    seasonality: [1.20, 1.05, 1.0, 0.85, 1.15, 1.05, 1.0, 0.95, 0.90, 0.80, 0.65, 0.60],
+    monthlyChurnPct: 0.0,
   },
 
   legacy: {

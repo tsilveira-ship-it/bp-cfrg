@@ -183,7 +183,11 @@ export type ModelParams = {
     rampEndCount: number;
     growthRates: number[];   // length = horizonYears - 1, growth from prev FY end
     priceIndexPa: number;
+    seasonality?: number[];           // 12 multipliers (Sept..Août). Default tous 1.
+    monthlyChurnPct?: number;         // % membres new perdu chaque mois (cohort retention proxy)
   };
+
+  notes?: Record<string, string>;     // notes textuelles libres par scénario
 
   legacy: {
     startCount: number;

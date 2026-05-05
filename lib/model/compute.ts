@@ -117,12 +117,13 @@ function avgSubPrice(tiers: { monthlyPrice: number; mixPct: number }[]): number 
 function monthlySubsCount(p: ModelParams, horizonMonths: number): number[] {
   const out = new Array<number>(horizonMonths).fill(0);
   const { rampStartCount: a, rampEndCount: b, growthRates } = p.subs;
+  const seasonality = p.subs.seasonality && p.subs.seasonality.length === 12 ? p.subs.seasonality : null;
+  const churn = p.subs.monthlyChurnPct ?? 0;
 
-  // FY0 (premier exercice) = ramp linéaire
+  // FY0 ramp linéaire
   for (let m = 0; m < FY_LEN; m++) {
     out[m] = a + ((b - a) * m) / (FY_LEN - 1);
   }
-
   let prevEnd = b;
   const horizonYears = Math.floor(horizonMonths / FY_LEN);
   for (let fy = 1; fy < horizonYears; fy++) {
@@ -133,6 +134,14 @@ function monthlySubsCount(p: ModelParams, horizonMonths: number): number[] {
       out[fy * FY_LEN + i] = start + ((end - start) * i) / (FY_LEN - 1);
     }
     prevEnd = end;
+  }
+
+  // Apply seasonality + churn cumulative
+  for (let m = 0; m < horizonMonths; m++) {
+    const moy = m % FY_LEN;
+    const seasonFactor = seasonality ? seasonality[moy] : 1;
+    const churnFactor = Math.pow(1 - churn, m);
+    out[m] = out[m] * seasonFactor * churnFactor;
   }
   return out;
 }
