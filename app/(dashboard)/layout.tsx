@@ -1,6 +1,7 @@
 import { Sidebar } from "@/components/sidebar";
 import { ActiveScenarioLoader } from "@/components/active-scenario-loader";
 import { AutoSaver } from "@/components/auto-saver";
+import { HealthBanner } from "@/components/health-banner";
 import { getMyRole } from "@/app/actions/access";
 
 export default async function DashboardLayout({
@@ -18,8 +19,9 @@ export default async function DashboardLayout({
   return (
     <div className="flex min-h-screen">
       <Sidebar isAdmin={isAdmin} />
-      <main className="flex-1 overflow-x-auto">
-        <div className="mx-auto w-full max-w-[1600px] p-6 lg:p-10">{children}</div>
+      <main className="flex-1 overflow-x-auto flex flex-col">
+        <HealthBanner />
+        <div className="mx-auto w-full max-w-[1600px] p-6 lg:p-10 flex-1">{children}</div>
       </main>
       <ActiveScenarioLoader />
       <AutoSaver />
