@@ -137,6 +137,53 @@ export function CostBreakdownChart({ data }: { data: Datum[] }) {
   );
 }
 
+export function MonthlyCostStackChart({
+  data,
+  height = 380,
+}: {
+  data: Datum[];
+  height?: number;
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={data} margin={{ top: 16, right: 16, left: 0, bottom: 40 }}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+        <XAxis
+          dataKey="label"
+          tick={{ fontSize: 10 }}
+          interval={2}
+          angle={-45}
+          textAnchor="end"
+          height={50}
+        />
+        <YAxis tickFormatter={compactCurrency} tick={{ fontSize: 11 }} />
+        <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmtCurrency(Number(v))} />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
+        <Bar dataKey="Salaires" stackId="c" fill={PALETTE[0]} />
+        <Bar dataKey="Loyer" stackId="c" fill={PALETTE[1]} />
+        <Bar dataKey="Récurrent" stackId="c" fill={PALETTE[2]} />
+        <Bar dataKey="Marketing" stackId="c" fill={PALETTE[3]} />
+        <Bar dataKey="Provisions" stackId="c" fill={PALETTE[4]} />
+        <Bar dataKey="Ponctuels" stackId="c" fill={PALETTE[5]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+export function MonthlyTotalCostLine({ data, height = 200 }: { data: Datum[]; height?: number }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+        <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={5} />
+        <YAxis tickFormatter={compactCurrency} tick={{ fontSize: 11 }} />
+        <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmtCurrency(Number(v))} />
+        <Line type="monotone" dataKey="Total" stroke={BRAND} strokeWidth={2} dot={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
 export function MembersChart({ data }: { data: Datum[] }) {
   return (
     <ResponsiveContainer width="100%" height={320}>
