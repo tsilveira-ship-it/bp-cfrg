@@ -32,11 +32,38 @@ export default function ParametersPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Paramètres</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Tous les inputs du modèle. Modifications appliquées en temps réel et persistées localement.
+            Tous les inputs du modèle. Modifications en temps réel + auto-save (si fork chargé).
           </p>
         </div>
         <ScenarioSwitcher />
       </header>
+
+      <Card className="bg-blue-50/40 border-blue-300">
+        <CardContent className="pt-5 space-y-2">
+          <h3 className="font-semibold text-sm">📋 Guide propriétaire</h3>
+          <p className="text-xs text-muted-foreground">
+            Cette page liste tous les inputs. Pour les sujets complexes, des outils dédiés existent:
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-2">
+            <a href="/salaries" className="text-xs flex items-center gap-2 p-2 border rounded-md hover:bg-muted/40 bg-card">
+              <span className="font-mono text-[10px] bg-[#D32F2F]/10 px-1.5 py-0.5 rounded">→ /salaries</span>
+              Outil masse salariale (cadres, freelance, estimateur net/brut)
+            </a>
+            <a href="/financing" className="text-xs flex items-center gap-2 p-2 border rounded-md hover:bg-muted/40 bg-card">
+              <span className="font-mono text-[10px] bg-[#D32F2F]/10 px-1.5 py-0.5 rounded">→ /financing</span>
+              Apports + emprunts + obligations + simulateur
+            </a>
+            <a href="/sensitivity" className="text-xs flex items-center gap-2 p-2 border rounded-md hover:bg-muted/40 bg-card">
+              <span className="font-mono text-[10px] bg-[#D32F2F]/10 px-1.5 py-0.5 rounded">→ /sensitivity</span>
+              Stress test + sliders ± sur drivers
+            </a>
+            <a href="/assumptions" className="text-xs flex items-center gap-2 p-2 border rounded-md hover:bg-muted/40 bg-card">
+              <span className="font-mono text-[10px] bg-[#D32F2F]/10 px-1.5 py-0.5 rounded">→ /assumptions</span>
+              Vue synthétique de toutes les hypothèses
+            </a>
+          </div>
+        </CardContent>
+      </Card>
 
       <Accordion defaultValue={["timeline", "subs", "salaries"]} className="space-y-3">
         <AccordionItem value="timeline" className="border rounded-lg bg-card border-[#D32F2F]/30">
