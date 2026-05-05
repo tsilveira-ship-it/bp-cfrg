@@ -13,6 +13,7 @@ import {
   FolderOpen,
   ShieldCheck,
   Banknote,
+  UsersRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "@/components/user-menu";
@@ -23,6 +24,7 @@ const NAV = [
   { href: "/costs", label: "Dépenses", icon: Coins },
   { href: "/cashflow", label: "Trésorerie", icon: Wallet },
   { href: "/financing", label: "Financement", icon: Banknote },
+  { href: "/salaries", label: "Masse salariale", icon: UsersRound },
   { href: "/monthly", label: "Vue mensuelle", icon: CalendarRange },
   { href: "/parameters", label: "Paramètres", icon: Sliders },
   { href: "/scenarios", label: "Mes scénarios", icon: FolderOpen },

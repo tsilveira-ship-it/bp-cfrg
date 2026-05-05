@@ -1,6 +1,7 @@
 import {
   buildTimeline,
   effectiveMonthlyHours,
+  monthlyEmployerCost,
   type BondIssue,
   type LoanLine,
   type ModelParams,
@@ -183,15 +184,15 @@ function monthlyMerch(p: ModelParams, horizonMonths: number): number[] {
 function monthlySalaries(p: ModelParams, horizonMonths: number): number[] {
   const out = new Array<number>(horizonMonths).fill(0);
   const pools = p.salaries.freelancePools ?? [];
+  const profiles = p.salaries.chargesProfiles;
   for (let m = 0; m < horizonMonths; m++) {
     const fy = Math.floor(m / FY_LEN);
     const idx = Math.pow(1 + p.salaries.annualIndexPa, Math.max(0, fy - 1));
     let total = 0;
     for (const item of p.salaries.items) {
       if (m < item.startMonth) continue;
-      let base = item.monthlyGross;
-      if (fy >= 1 && item.fy26Bump !== undefined) base = item.fy26Bump;
-      total += base * idx * item.fte * (1 + p.salaries.chargesPatroPct);
+      if (item.endMonth !== undefined && m > item.endMonth) continue;
+      total += monthlyEmployerCost(item, profiles, p.salaries.chargesPatroPct, idx, fy);
     }
     for (const pool of pools) {
       if (pool.startMonth !== undefined && m < pool.startMonth) continue;

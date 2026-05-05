@@ -29,14 +29,37 @@ export type SubscriptionTier = {
   mixPct: number;
 };
 
+export type SalaryCategory = "cadre" | "non-cadre" | "apprenti" | "stagiaire";
+
 export type SalaryItem = {
   id: string;
   role: string;
-  monthlyGross: number;
+  monthlyGross: number;             // brut mensuel
   fte: number;
   startMonth: number;
-  fy26Bump?: number;
+  endMonth?: number;                 // mois inclusif de départ (par défaut horizonMonths-1)
+  category?: SalaryCategory;
+  thirteenthMonth?: boolean;         // 13e mois (ajoute brut/12)
+  yearlyBonus?: number;              // prime annuelle €
+  mutuelle?: number;                 // €/mois employeur
+  transport?: number;                // €/mois remboursement employeur
+  ticketsResto?: number;             // €/mois part employeur
+  annualRaisePct?: number;           // override % indexation annuelle pour ce poste
+  fy26Bump?: number;                 // legacy: override brut FY26
 };
+
+export type ChargesProfile = {
+  category: SalaryCategory;
+  patroPct: number;                  // taux charges patronales (ex 0.42 cadre)
+  salaryPct: number;                 // taux charges salariales (informatif)
+};
+
+export const DEFAULT_CHARGES: ChargesProfile[] = [
+  { category: "cadre", patroPct: 0.42, salaryPct: 0.22 },
+  { category: "non-cadre", patroPct: 0.40, salaryPct: 0.22 },
+  { category: "apprenti", patroPct: 0.10, salaryPct: 0 },
+  { category: "stagiaire", patroPct: 0, salaryPct: 0 },
+];
 
 export type FreelancePool = {
   id: string;
@@ -50,6 +73,49 @@ export type FreelancePool = {
 };
 
 export const WEEKS_PER_MONTH = 4.3;
+
+export function getPatroPct(item: SalaryItem, profiles: ChargesProfile[] | undefined, fallback: number): number {
+  if (!item.category || !profiles) return fallback;
+  const p = profiles.find((pr) => pr.category === item.category);
+  return p?.patroPct ?? fallback;
+}
+
+export function monthlyEmployerCost(item: SalaryItem, profiles: ChargesProfile[] | undefined, fallbackPatro: number, indexFactor: number, fy: number): number {
+  // Brut effectif: legacy fy26Bump si défini et fy >= 1, sinon monthlyGross indexé
+  let baseGross = item.monthlyGross;
+  if (fy >= 1 && item.fy26Bump !== undefined) baseGross = item.fy26Bump;
+  // Indexation propre au poste si définie, sinon globale
+  const idx = item.annualRaisePct !== undefined
+    ? Math.pow(1 + item.annualRaisePct, Math.max(0, fy - 1))
+    : indexFactor;
+  const grossThisMonth = baseGross * idx;
+
+  const patro = getPatroPct(item, profiles, fallbackPatro);
+  let totalEmployer = grossThisMonth * (1 + patro);
+
+  if (item.thirteenthMonth) totalEmployer += (grossThisMonth * (1 + patro)) / 12;
+  if (item.yearlyBonus) totalEmployer += (item.yearlyBonus * (1 + patro)) / 12;
+  if (item.mutuelle) totalEmployer += item.mutuelle;
+  if (item.transport) totalEmployer += item.transport;
+  if (item.ticketsResto) totalEmployer += item.ticketsResto;
+
+  return totalEmployer * item.fte;
+}
+
+// Conversion approximative net → brut (charges salariales par défaut 22%)
+export function netToGross(net: number, salaryPct = 0.22): number {
+  return net / (1 - salaryPct);
+}
+
+// Conversion brut → coût employeur
+export function grossToCost(gross: number, patroPct = 0.42): number {
+  return gross * (1 + patroPct);
+}
+
+// Conversion coût employeur → brut
+export function costToGross(cost: number, patroPct = 0.42): number {
+  return cost / (1 + patroPct);
+}
 
 export function effectiveMonthlyHours(pool: FreelancePool): number {
   if (pool.hoursPerWeekday !== undefined && pool.hoursPerWeekendDay !== undefined) {
@@ -138,6 +204,7 @@ export type ModelParams = {
     freelancePools: FreelancePool[];
     annualIndexPa: number;
     chargesPatroPct: number;
+    chargesProfiles?: ChargesProfile[];
   };
 
   rent: {
