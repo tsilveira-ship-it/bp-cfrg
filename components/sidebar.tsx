@@ -32,6 +32,8 @@ import {
   PieChart,
   Sparkles,
   GitBranch,
+  BookOpen,
+  Globe,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "@/components/user-menu";
@@ -68,6 +70,8 @@ const GROUPS: Group[] = [
       { href: "/executive-summary", label: "Executive summary", icon: Sparkles },
       { href: "/financial-highlights", label: "Synthèse 1-page", icon: Sparkles },
       { href: "/use-of-funds", label: "Use of funds", icon: GitBranch },
+      { href: "/comparables", label: "Comparables marché", icon: Globe },
+      { href: "/glossary", label: "Glossaire", icon: BookOpen },
       { href: "/sensitivity", label: "Sensibilité", icon: TrendingDown },
       { href: "/waterfalls", label: "Waterfall charts", icon: Waves },
       { href: "/capacity", label: "Capacité", icon: Activity },
@@ -88,6 +92,7 @@ const GROUPS: Group[] = [
       { href: "/scenarios", label: "Mes scénarios", icon: FolderOpen },
       { href: "/master-history", label: "Historique masters", icon: History },
       { href: "/share", label: "Partager (lien investisseur)", icon: Send },
+      { href: "/data-room", label: "Data room", icon: FolderOpen },
       { href: "/backup", label: "Backup JSON", icon: FileJson },
       { href: "/print", label: "Export PDF", icon: Printer },
     ],
