@@ -2,7 +2,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { DEFAULT_PARAMS, AUDIT_CORRECTED_PARAMS } from "./model/defaults";
-import type { ModelParams } from "./model/types";
+import { normalizeParams, type ModelParams } from "./model/types";
 
 type ScenarioName = "base" | "audit" | "custom";
 
@@ -54,7 +54,7 @@ export const useModelStore = create<Store>()(
         })),
       setLoaded: (l) => set(() => ({ loaded: l })),
       loadParams: (params, ref) =>
-        set(() => ({ params, loaded: ref, scenario: "custom" })),
+        set(() => ({ params: normalizeParams(params), loaded: ref, scenario: "custom" })),
       reset: () =>
         set(() => ({ params: DEFAULT_PARAMS, scenario: "base", loaded: { kind: "none" } })),
     }),

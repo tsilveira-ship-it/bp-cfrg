@@ -1,7 +1,12 @@
 import type { ModelParams } from "./types";
 
-// Default params reproducing Prévi_gestion - v260505.xlsx (BP & CF Cible CFRG)
+// Default params: projet démarre Sept 2026, horizon 7 ans (FY26→FY32)
 export const DEFAULT_PARAMS: ModelParams = {
+  timeline: {
+    startYear: 2026,
+    horizonYears: 7,
+  },
+
   subs: {
     tiers: [
       { id: "ill2", name: "Abo Illimité (2 séances/j)", monthlyPrice: 157.5, mixPct: 0.10 },
@@ -11,25 +16,23 @@ export const DEFAULT_PARAMS: ModelParams = {
       { id: "s4",   name: "Abo 4 séances", monthlyPrice: 70.83, mixPct: 0.10 },
     ],
     vatRate: 0.20,
-    rampStartCount: 80,    // Sept 2025 nouveaux abos
-    rampEndCount: 200,     // Août 2026
-    fy26GrowthPct: 0.40,   // doubles in counts but xlsx shows ~+30% sustained — calibrated below
-    fy27GrowthPct: 0.30,
-    fy28GrowthPct: 0.20,
-    fy29GrowthPct: 0.15,
+    rampStartCount: 80,
+    rampEndCount: 200,
+    // 6 taux de croissance pour FY27..FY32 (post ramp-up FY26)
+    growthRates: [0.40, 0.30, 0.20, 0.15, 0.10, 0.08],
     priceIndexPa: 0.0,
   },
 
   legacy: {
     startCount: 220,
     avgMonthlyPrice: 120.83,
-    yearlyChurnAbs: 24, // 220→200→180... (~24/y to match xlsx -29k€/y gross)
+    yearlyChurnAbs: 24,
   },
 
   prestations: {
     teen:   { price: 41.67, startCount: 10, growthPa: 0.10 },
     senior: { price: 33.33, startCount: 10, growthPa: 0.10 },
-    horsAbo:{ monthlyAvg: 4166, growthPa: 0.05 }, // 8333/2 starting low, ramp
+    horsAbo:{ monthlyAvg: 4166, growthPa: 0.05 },
   },
 
   merch: { monthlyMargin: 351, growthPa: 0.0 },
@@ -41,11 +44,11 @@ export const DEFAULT_PARAMS: ModelParams = {
       { id: "associes", role: "Associés gérants", monthlyGross: 3300, fte: 2, startMonth: 0 },
     ],
     freelancePools: [
-      { id: "floor_cfrg", name: "Floor CFRG", hourlyRate: 25, monthlyHours: 206.4 },
-      { id: "floor_hyrox", name: "Floor Hyrox", hourlyRate: 25, monthlyHours: 146.2 },
-      { id: "floor_sandbox", name: "Floor sandbox", hourlyRate: 25, monthlyHours: 10.32 },
+      { id: "floor_cfrg", name: "Floor CFRG", hourlyRate: 25, monthlyHours: 206.4, hoursPerWeekday: 8, hoursPerWeekendDay: 4 },
+      { id: "floor_hyrox", name: "Floor Hyrox", hourlyRate: 25, monthlyHours: 146.2, hoursPerWeekday: 6, hoursPerWeekendDay: 2 },
+      { id: "floor_sandbox", name: "Floor sandbox", hourlyRate: 25, monthlyHours: 10.32, hoursPerWeekday: 0.4, hoursPerWeekendDay: 0.2 },
       { id: "cadre_coaching", name: "Cours inclus dans 2 headcoach cadre", hourlyRate: 25, monthlyHours: -43 },
-      { id: "accueil", name: "Espace accueil", hourlyRate: 20, monthlyHours: 206.4 },
+      { id: "accueil", name: "Espace accueil", hourlyRate: 20, monthlyHours: 206.4, hoursPerWeekday: 8, hoursPerWeekendDay: 4 },
       { id: "entretiens_com", name: "Entretiens (commercial)", hourlyRate: 25, monthlyHours: 90 },
       { id: "cadre_entretiens", name: "Entretiens inclus dans 2 headcoach cadre", hourlyRate: 25, monthlyHours: -51.6 },
     ],
@@ -54,7 +57,8 @@ export const DEFAULT_PARAMS: ModelParams = {
   },
 
   rent: {
-    monthlyByFy: [10000, 18113, 12500, 12500, 12500],
+    // 7 années: FY26 année 1 (loyer réduit), FY27 hausse, puis stabilisé
+    monthlyByFy: [10000, 18113, 12500, 12500, 12500, 12500, 12500],
     yearlyTaxes: 12000,
     monthlyCoopro: 833,
   },
@@ -74,10 +78,10 @@ export const DEFAULT_PARAMS: ModelParams = {
   ],
 
   oneOffs: [
-    { id: "sacem", name: "SACEM", amount: 4739, month: 9, yearly: true },         // Juin
-    { id: "doc", name: "Documentation", amount: 420, month: 5, yearly: true },     // Févr
-    { id: "extincteurs", name: "Extincteurs", amount: 420, month: 0, yearly: true },// Sept
-    { id: "defib", name: "Défibrillateur", amount: 350, month: 0, yearly: true },  // Sept
+    { id: "sacem", name: "SACEM", amount: 4739, month: 9, yearly: true },
+    { id: "doc", name: "Documentation", amount: 420, month: 5, yearly: true },
+    { id: "extincteurs", name: "Extincteurs", amount: 420, month: 0, yearly: true },
+    { id: "defib", name: "Défibrillateur", amount: 350, month: 0, yearly: true },
   ],
 
   marketing: {
@@ -102,40 +106,36 @@ export const DEFAULT_PARAMS: ModelParams = {
   financing: {
     fundraise: 400000,
     loanMonthly: 2597.10,
-    loanDurationMonths: 84, // 7y typical
-    bondMonthly: 2000,           // coupon
+    loanDurationMonths: 84,
+    bondMonthly: 2000,
     bondCapitalRepayMonthly: 6666.67,
     bondDurationMonths: 60,
   },
 
   tax: {
     isRate: 0.25,
-    enableIs: false,   // matches xlsx (no IS)
-    enableDA: false,   // matches xlsx (no D&A)
+    enableIs: false,
+    enableDA: false,
     daYears: 5,
   },
 
-  bfr: {
-    daysOfRevenue: 0,
-  },
-
-  openingCash: 0, // 400k arrives via fundraise FY25
+  bfr: { daysOfRevenue: 0 },
+  openingCash: 0,
 };
 
-// Audit-corrected version (toggleable in UI)
 export const AUDIT_CORRECTED_PARAMS: ModelParams = {
   ...DEFAULT_PARAMS,
   salaries: {
     ...DEFAULT_PARAMS.salaries,
-    annualIndexPa: 0.02, // 2% indexation salariale
+    annualIndexPa: 0.02,
   },
   marketing: {
     ...DEFAULT_PARAMS.marketing,
-    pctOfRevenue: 0.02, // +2% du CA en marketing additionnel
+    pctOfRevenue: 0.02,
   },
   subs: {
     ...DEFAULT_PARAMS.subs,
-    priceIndexPa: 0.02, // 2% hausse tarif/an
+    priceIndexPa: 0.02,
   },
   tax: {
     isRate: 0.25,

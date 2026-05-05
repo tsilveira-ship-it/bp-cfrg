@@ -1,20 +1,32 @@
-export const HORIZON_MONTHS = 60;
-export const FY_LABELS = ["FY25", "FY26", "FY27", "FY28", "FY29"] as const;
-export const FY_START_MONTH_INDEX = 0; // model month 0 = Sept 2025
+// Calendar helpers
+const FR_MONTHS = ["Sept", "Oct", "Nov", "Déc", "Janv", "Févr", "Mars", "Avr", "Mai", "Juin", "Juil", "Août"];
 
-export const MONTH_LABELS_FR = [
-  "Sept 25","Oct 25","Nov 25","Déc 25","Janv 26","Févr 26","Mars 26","Avr 26","Mai 26","Juin 26","Juil 26","Août 26",
-  "Sept 26","Oct 26","Nov 26","Déc 26","Janv 27","Févr 27","Mars 27","Avr 27","Mai 27","Juin 27","Juil 27","Août 27",
-  "Sept 27","Oct 27","Nov 27","Déc 27","Janv 28","Févr 28","Mars 28","Avr 28","Mai 28","Juin 28","Juil 28","Août 28",
-  "Sept 28","Oct 28","Nov 28","Déc 28","Janv 29","Févr 29","Mars 29","Avr 29","Mai 29","Juin 29","Juil 29","Août 29",
-  "Sept 29","Oct 29","Nov 29","Déc 29","Janv 30","Févr 30","Mars 30","Avr 30","Mai 30","Juin 30","Juil 30","Août 30",
-];
+export function buildTimeline(startYear: number, horizonYears: number) {
+  const horizonMonths = horizonYears * 12;
+  const monthLabels: string[] = [];
+  const fyLabels: string[] = [];
+  for (let i = 0; i < horizonYears; i++) {
+    fyLabels.push(`FY${(startYear + i) % 100}`);
+  }
+  for (let i = 0; i < horizonMonths; i++) {
+    const fyIdx = Math.floor(i / 12);
+    const monthIdx = i % 12;
+    const fr = FR_MONTHS[monthIdx];
+    // Jan-Aug fall in next calendar year
+    const calYear = startYear + fyIdx + (monthIdx >= 4 ? 1 : 0);
+    monthLabels.push(`${fr} ${String(calYear).slice(-2)}`);
+  }
+  return { startYear, horizonYears, horizonMonths, monthLabels, fyLabels };
+}
+
+// Legacy export kept for components that did not migrate yet
+export const FY_LABELS_LEGACY = ["FY25", "FY26", "FY27", "FY28", "FY29"] as const;
 
 export type SubscriptionTier = {
   id: string;
   name: string;
   monthlyPrice: number;
-  mixPct: number; // 0..1, share of new subs
+  mixPct: number;
 };
 
 export type SalaryItem = {
@@ -22,17 +34,29 @@ export type SalaryItem = {
   role: string;
   monthlyGross: number;
   fte: number;
-  startMonth: number; // model month index (0-59) when role activates
-  fy26Bump?: number; // explicit FY26 monthly value override
+  startMonth: number;
+  fy26Bump?: number;
 };
 
 export type FreelancePool = {
   id: string;
   name: string;
   hourlyRate: number;
-  monthlyHours: number; // negative = deduction (heures incluses dans cadres)
-  startMonth?: number; // 0..59
+  monthlyHours: number;
+  // Si défini, monthlyHours = (hoursPerWeekday × 5 + hoursPerWeekendDay × 2) × WEEKS_PER_MONTH
+  hoursPerWeekday?: number;
+  hoursPerWeekendDay?: number;
+  startMonth?: number;
 };
+
+export const WEEKS_PER_MONTH = 4.3;
+
+export function effectiveMonthlyHours(pool: FreelancePool): number {
+  if (pool.hoursPerWeekday !== undefined && pool.hoursPerWeekendDay !== undefined) {
+    return (pool.hoursPerWeekday * 5 + pool.hoursPerWeekendDay * 2) * WEEKS_PER_MONTH;
+  }
+  return pool.monthlyHours;
+}
 
 export type RecurringExpense = {
   id: string;
@@ -45,107 +69,91 @@ export type OneOffExpense = {
   id: string;
   name: string;
   amount: number;
-  month: number; // 0-11 within a year (Sept=0)
-  yearly: boolean; // recurs every year
+  month: number;
+  yearly: boolean;
 };
 
 export type ModelParams = {
+  // Timeline
+  timeline: {
+    startYear: number;       // ex: 2026 → premier mois = Sept 2026
+    horizonYears: number;    // 3..10
+  };
+
   // Revenue: new subscriptions
   subs: {
     tiers: SubscriptionTier[];
-    vatRate: number; // TVA, ex: 0.20. Revenue model uses HT = TTC / (1+vatRate)
-    rampStartCount: number; // total new subs in Sept 25
-    rampEndCount: number; // total new subs in Aug 26 (last month FY25)
-    fy26GrowthPct: number;
-    fy27GrowthPct: number;
-    fy28GrowthPct: number;
-    fy29GrowthPct: number;
-    priceIndexPa: number; // annual price increase % (FY26+)
+    vatRate: number;
+    rampStartCount: number;
+    rampEndCount: number;
+    growthRates: number[];   // length = horizonYears - 1, growth from prev FY end
+    priceIndexPa: number;
   };
 
-  // Legacy Javelot members (declining)
   legacy: {
-    startCount: number; // Sept 25
+    startCount: number;
     avgMonthlyPrice: number;
-    yearlyChurnAbs: number; // members lost per year (linear monthly)
+    yearlyChurnAbs: number;
   };
 
-  // Complementary services
   prestations: {
     teen: { price: number; startCount: number; growthPa: number };
     senior: { price: number; startCount: number; growthPa: number };
     horsAbo: { monthlyAvg: number; growthPa: number };
   };
 
-  // Merchandising
   merch: { monthlyMargin: number; growthPa: number };
 
-  // Salaries (cadres + freelance coaching)
   salaries: {
     items: SalaryItem[];
     freelancePools: FreelancePool[];
-    annualIndexPa: number; // % annual réévaluation (applied each new FY)
-    chargesPatroPct: number; // already included in monthlyGross? if yes set 0
+    annualIndexPa: number;
+    chargesPatroPct: number;
   };
 
-  // Rent
   rent: {
-    monthlyByFy: number[]; // length 5
-    yearlyTaxes: number; // taxes month (Aug)
+    monthlyByFy: number[];   // length = horizonYears
+    yearlyTaxes: number;
     monthlyCoopro: number;
   };
 
-  // Recurring opex
   recurring: RecurringExpense[];
-
-  // One-off prestataires (annual recurrence)
   oneOffs: OneOffExpense[];
 
-  // Marketing
   marketing: {
     monthlyBudget: number;
     indexPa: number;
-    pctOfRevenue: number; // if >0, additional marketing scaled with CA
+    pctOfRevenue: number;
   };
 
-  // Provisions
   provisions: { monthlyEquipement: number; monthlyTravaux: number; indexPa: number };
 
-  // Investment (one-time, FY25)
   capex: { equipment: number; travaux: number; juridique: number; depots: number };
 
-  // Financing
   financing: {
-    fundraise: number; // equity round received month 0
-    loanMonthly: number; // mensualité (capital+intérêt+assurance)
+    fundraise: number;
+    loanMonthly: number;
     loanDurationMonths: number;
-    bondMonthly: number; // intérêts coupon
-    bondCapitalRepayMonthly: number; // remboursement capital obligation
+    bondMonthly: number;
+    bondCapitalRepayMonthly: number;
     bondDurationMonths: number;
   };
 
-  // Tax & accounting
   tax: {
-    isRate: number; // taux IS
+    isRate: number;
     enableIs: boolean;
-    enableDA: boolean; // dotations aux amortissements
+    enableDA: boolean;
     daYears: number;
   };
 
-  // Working capital
-  bfr: {
-    daysOfRevenue: number;
-  };
-
-  // Initial cash
+  bfr: { daysOfRevenue: number };
   openingCash: number;
 };
 
 export type MonthlyComputed = {
   month: number;
   label: string;
-  fy: number; // 0..4
-  // Revenue lines
+  fy: number;
   subsCount: number;
   subsRevenue: number;
   legacyCount: number;
@@ -153,7 +161,6 @@ export type MonthlyComputed = {
   prestationsRevenue: number;
   merchRevenue: number;
   totalRevenue: number;
-  // Cost lines
   salaries: number;
   rent: number;
   recurringEntretien: number;
@@ -162,7 +169,6 @@ export type MonthlyComputed = {
   provisions: number;
   oneOff: number;
   totalOpex: number;
-  // P&L
   ebitda: number;
   da: number;
   ebit: number;
@@ -170,7 +176,6 @@ export type MonthlyComputed = {
   pbt: number;
   tax: number;
   netIncome: number;
-  // CF
   capex: number;
   bfrChange: number;
   loanPrincipalRepay: number;
@@ -223,4 +228,60 @@ export type ModelResult = {
   cashTroughValue: number;
   irr5y: number | null;
   fcfTotal: number;
+  startYear: number;
+  horizonYears: number;
+  horizonMonths: number;
+  fyLabels: string[];
+  monthLabels: string[];
 };
+
+// Migration helper: takes a possibly-legacy params object and returns a normalized one.
+export function normalizeParams(p: any): ModelParams {
+  const timeline = p.timeline ?? { startYear: 2026, horizonYears: 7 };
+
+  // Subs growth: convert legacy fy26..fy29 to growthRates if missing
+  let growthRates: number[] = p.subs?.growthRates;
+  if (!Array.isArray(growthRates)) {
+    growthRates = [
+      p.subs?.fy26GrowthPct ?? 0.30,
+      p.subs?.fy27GrowthPct ?? 0.25,
+      p.subs?.fy28GrowthPct ?? 0.20,
+      p.subs?.fy29GrowthPct ?? 0.15,
+    ];
+  }
+  // Pad/truncate to horizonYears - 1
+  const targetGrowthLen = Math.max(0, timeline.horizonYears - 1);
+  if (growthRates.length < targetGrowthLen) {
+    const last = growthRates[growthRates.length - 1] ?? 0.10;
+    while (growthRates.length < targetGrowthLen) growthRates.push(last);
+  } else if (growthRates.length > targetGrowthLen) {
+    growthRates = growthRates.slice(0, targetGrowthLen);
+  }
+
+  // Rent monthlyByFy: pad/truncate
+  let rentArr: number[] = p.rent?.monthlyByFy ?? [];
+  if (rentArr.length < timeline.horizonYears) {
+    const last = rentArr[rentArr.length - 1] ?? 12500;
+    while (rentArr.length < timeline.horizonYears) rentArr.push(last);
+  } else if (rentArr.length > timeline.horizonYears) {
+    rentArr = rentArr.slice(0, timeline.horizonYears);
+  }
+
+  return {
+    ...p,
+    timeline,
+    subs: {
+      ...p.subs,
+      vatRate: p.subs?.vatRate ?? 0.20,
+      growthRates,
+    },
+    rent: {
+      ...p.rent,
+      monthlyByFy: rentArr,
+    },
+    salaries: {
+      ...p.salaries,
+      freelancePools: p.salaries?.freelancePools ?? [],
+    },
+  };
+}

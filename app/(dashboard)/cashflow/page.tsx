@@ -45,11 +45,9 @@ export default function CashflowPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Flux</TableHead>
-                <TableHead className="text-right">FY25</TableHead>
-                <TableHead className="text-right">FY26</TableHead>
-                <TableHead className="text-right">FY27</TableHead>
-                <TableHead className="text-right">FY28</TableHead>
-                <TableHead className="text-right">FY29</TableHead>
+                {result.yearly.map((y) => (
+                  <TableHead key={y.fy} className="text-right">{y.label}</TableHead>
+                ))}
               </TableRow>
             </TableHeader>
             <TableBody>

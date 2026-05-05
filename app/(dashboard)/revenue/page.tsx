@@ -84,11 +84,9 @@ export default function RevenuePage() {
                 <TableHead className="text-right">TTC</TableHead>
                 <TableHead className="text-right">HT</TableHead>
                 <TableHead className="text-right">Mix</TableHead>
-                <TableHead className="text-right">FY25</TableHead>
-                <TableHead className="text-right">FY26</TableHead>
-                <TableHead className="text-right">FY27</TableHead>
-                <TableHead className="text-right">FY28</TableHead>
-                <TableHead className="text-right">FY29</TableHead>
+                {result.yearly.map((y) => (
+                  <TableHead key={y.fy} className="text-right">{y.label}</TableHead>
+                ))}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -156,9 +154,9 @@ export default function RevenuePage() {
               <div className="text-xs text-muted-foreground">(206 CFRG + 146 Hyrox + 10 sandbox)</div>
             </div>
             <div className="p-3 border rounded">
-              <div className="text-xs text-muted-foreground">Membres actifs FY26 max</div>
+              <div className="text-xs text-muted-foreground">Membres actifs fin {result.yearly[0].label}</div>
               <div className="text-2xl font-bold">{fmtNum(result.monthly[11].subsCount + result.monthly[11].legacyCount)}</div>
-              <div className="text-xs text-muted-foreground">Fin FY25</div>
+              <div className="text-xs text-muted-foreground">{result.monthly[11].label}</div>
             </div>
             <div className="p-3 border rounded">
               <div className="text-xs text-muted-foreground">Heures dispo / membre</div>

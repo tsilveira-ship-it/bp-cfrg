@@ -68,21 +68,24 @@ export function CompareView({ a, b }: { a: ScenarioRow; b: ScenarioRow }) {
   const rb = useMemo(() => computeModel(b.params), [b.params]);
   const diffs = useMemo(() => diffParams(a.params, b.params), [a.params, b.params]);
 
-  const fy29a = ra.yearly[4];
-  const fy29b = rb.yearly[4];
+  const lastA = ra.yearly[ra.yearly.length - 1];
+  const lastB = rb.yearly[rb.yearly.length - 1];
+  const lblA = lastA?.label ?? "";
+  const lblB = lastB?.label ?? "";
+  const finalLbl = lblA === lblB ? lblA : `${lblA}/${lblB}`;
 
   const kpis = [
-    { label: "CA FY29", a: fy29a.totalRevenue, b: fy29b.totalRevenue, kind: "currency" as const },
-    { label: "EBITDA FY29", a: fy29a.ebitda, b: fy29b.ebitda, kind: "currency" as const },
+    { label: `CA ${finalLbl}`, a: lastA.totalRevenue, b: lastB.totalRevenue, kind: "currency" as const },
+    { label: `EBITDA ${finalLbl}`, a: lastA.ebitda, b: lastB.ebitda, kind: "currency" as const },
     {
-      label: "Marge EBITDA FY29",
-      a: fy29a.ebitdaMargin,
-      b: fy29b.ebitdaMargin,
+      label: `Marge EBITDA ${finalLbl}`,
+      a: lastA.ebitdaMargin,
+      b: lastB.ebitdaMargin,
       kind: "percent" as const,
     },
-    { label: "Résultat net FY29", a: fy29a.netIncome, b: fy29b.netIncome, kind: "currency" as const },
+    { label: `Résultat net ${finalLbl}`, a: lastA.netIncome, b: lastB.netIncome, kind: "currency" as const },
     { label: "Trésorerie min", a: ra.cashTroughValue, b: rb.cashTroughValue, kind: "currency" as const },
-    { label: "Trésorerie fin FY29", a: fy29a.cashEnd, b: fy29b.cashEnd, kind: "currency" as const },
+    { label: `Trésorerie fin ${finalLbl}`, a: lastA.cashEnd, b: lastB.cashEnd, kind: "currency" as const },
   ];
 
   return (

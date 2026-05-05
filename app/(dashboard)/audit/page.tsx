@@ -89,7 +89,8 @@ export default function AuditPage() {
   const params = useModelStore((s) => s.params);
   const baseResult = useMemo(() => computeModel(DEFAULT_PARAMS), []);
   const auditResult = useMemo(() => computeModel(AUDIT_CORRECTED_PARAMS), []);
-  const currentResult = useMemo(() => computeModel(params), [params]);
+  const baseLast = baseResult.yearly[baseResult.yearly.length - 1];
+  const auditLast = auditResult.yearly[auditResult.yearly.length - 1];
 
   return (
     <div className="space-y-6">
@@ -106,7 +107,7 @@ export default function AuditPage() {
       <Card>
         <CardHeader>
           <CardTitle>Comparaison Base vs Audit corrigé</CardTitle>
-          <CardDescription>FY29 — impact des corrections fiscales et opérationnelles</CardDescription>
+          <CardDescription>{baseLast.label} — impact des corrections fiscales et opérationnelles</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -120,12 +121,12 @@ export default function AuditPage() {
             </TableHeader>
             <TableBody>
               {[
-                { label: "CA FY29", b: baseResult.yearly[4].totalRevenue, a: auditResult.yearly[4].totalRevenue },
-                { label: "EBITDA FY29", b: baseResult.yearly[4].ebitda, a: auditResult.yearly[4].ebitda },
-                { label: "Marge EBITDA FY29", b: baseResult.yearly[4].ebitdaMargin, a: auditResult.yearly[4].ebitdaMargin, isPct: true },
-                { label: "Résultat net FY29", b: baseResult.yearly[4].netIncome, a: auditResult.yearly[4].netIncome },
+                { label: `CA ${baseLast.label}`, b: baseLast.totalRevenue, a: auditLast.totalRevenue },
+                { label: `EBITDA ${baseLast.label}`, b: baseLast.ebitda, a: auditLast.ebitda },
+                { label: `Marge EBITDA ${baseLast.label}`, b: baseLast.ebitdaMargin, a: auditLast.ebitdaMargin, isPct: true },
+                { label: `Résultat net ${baseLast.label}`, b: baseLast.netIncome, a: auditLast.netIncome },
                 { label: "Trésorerie min.", b: baseResult.cashTroughValue, a: auditResult.cashTroughValue },
-                { label: "Trésorerie fin FY29", b: baseResult.yearly[4].cashEnd, a: auditResult.yearly[4].cashEnd },
+                { label: `Trésorerie fin ${baseLast.label}`, b: baseLast.cashEnd, a: auditLast.cashEnd },
               ].map((r, i) => (
                 <TableRow key={i}>
                   <TableCell className="font-medium">{r.label}</TableCell>

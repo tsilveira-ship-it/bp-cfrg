@@ -3,8 +3,8 @@ import { ParamNumber } from "@/components/param-input";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { fmtNum, fmtPct } from "@/lib/format";
-import type { ModelParams } from "@/lib/model/types";
+import { fmtNum } from "@/lib/format";
+import { buildTimeline, type ModelParams } from "@/lib/model/types";
 import { Sparkles } from "lucide-react";
 
 type Props = {
@@ -14,24 +14,21 @@ type Props = {
 };
 
 export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
-  const { subs } = params;
-  const growths = [subs.fy26GrowthPct, subs.fy27GrowthPct, subs.fy28GrowthPct, subs.fy29GrowthPct];
-  const growthPaths = ["subs.fy26GrowthPct", "subs.fy27GrowthPct", "subs.fy28GrowthPct", "subs.fy29GrowthPct"] as const;
+  const { subs, timeline } = params;
+  const tl = buildTimeline(timeline.startYear, timeline.horizonYears);
+  const growths = subs.growthRates ?? [];
 
-  // Implied end-of-FY counts
   const endCounts: number[] = [subs.rampEndCount];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < growths.length; i++) {
     endCounts.push(endCounts[i] * (1 + growths[i]));
   }
-  // endCounts: [Aug26, Aug27, Aug28, Aug29, Aug30]
 
-  // Build 60-month ramp for sparkline
   const monthly: number[] = [];
   for (let m = 0; m < 12; m++) {
     monthly.push(subs.rampStartCount + ((subs.rampEndCount - subs.rampStartCount) * m) / 11);
   }
   let prev = subs.rampEndCount;
-  for (let fy = 0; fy < 4; fy++) {
+  for (let fy = 0; fy < growths.length; fy++) {
     const next = prev * (1 + growths[fy]);
     for (let i = 0; i < 12; i++) {
       monthly.push(prev + ((next - prev) * i) / 11);
@@ -43,7 +40,7 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
   const sparkW = 100;
   const sparkH = 28;
   const points = monthly
-    .map((v, i) => `${(i * sparkW) / (monthly.length - 1)},${sparkH - (v / max) * sparkH}`)
+    .map((v, i) => `${(i * sparkW) / Math.max(1, monthly.length - 1)},${sparkH - (v / max) * sparkH}`)
     .join(" ");
 
   const applyAll = (pct: number) => {
@@ -51,10 +48,7 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
       ...p,
       subs: {
         ...p.subs,
-        fy26GrowthPct: pct,
-        fy27GrowthPct: pct,
-        fy28GrowthPct: pct,
-        fy29GrowthPct: pct,
+        growthRates: (p.subs.growthRates ?? []).map(() => pct),
       },
     }));
   };
@@ -80,7 +74,7 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
             value={subs.priceIndexPa}
             unit="%"
             step={0.5}
-            hint="Hausse annuelle composée des prix TTC"
+            hint="Hausse annuelle composée"
           />
         </div>
       </section>
@@ -89,7 +83,7 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
         <div className="flex items-center justify-between mb-3">
           <div>
             <h4 className="font-heading text-sm font-semibold uppercase tracking-wider">
-              Ramp-up FY25 (Sept 2025 → Août 2026)
+              Ramp-up {tl.fyLabels[0]} ({tl.monthLabels[0]} → {tl.monthLabels[11]})
             </h4>
             <p className="text-xs text-muted-foreground mt-0.5">Linéaire mois par mois.</p>
           </div>
@@ -100,12 +94,12 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <ParamNumber
             path="subs.rampStartCount"
-            label="Membres Sept 2025"
+            label={`Membres ${tl.monthLabels[0]}`}
             value={subs.rampStartCount}
           />
           <ParamNumber
             path="subs.rampEndCount"
-            label="Membres Août 2026 (cible)"
+            label={`Membres ${tl.monthLabels[11]} (cible)`}
             value={subs.rampEndCount}
           />
         </div>
@@ -115,7 +109,7 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
         <div className="flex items-center justify-between mb-3">
           <div>
             <h4 className="font-heading text-sm font-semibold uppercase tracking-wider">
-              Croissance annuelle FY26 → FY29
+              Croissance annuelle {tl.fyLabels[1] ?? ""} → {tl.fyLabels[tl.horizonYears - 1] ?? ""}
             </h4>
             <p className="text-xs text-muted-foreground mt-0.5">
               % d&apos;augmentation des membres entre fin FY(n) et fin FY(n+1).
@@ -123,7 +117,7 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
           </div>
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="sm" onClick={() => applyAll(0.20)} className="text-xs h-7">
-              Tout à 20%
+              20%
             </Button>
             <Button variant="ghost" size="sm" onClick={() => applyAll(0.10)} className="text-xs h-7">
               10%
@@ -133,26 +127,32 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
             </Button>
           </div>
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {[26, 27, 28, 29].map((yy, idx) => (
-            <div key={yy} className="p-3 border rounded-md bg-muted/20 space-y-2">
-              <Label className="text-xs font-medium">Croissance FY{yy}</Label>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {growths.map((g, idx) => (
+            <div key={idx} className="p-3 border rounded-md bg-muted/20 space-y-2">
+              <Label className="text-xs font-medium">Croissance {tl.fyLabels[idx + 1]}</Label>
               <div className="relative">
                 <Input
                   type="number"
                   step={1}
-                  value={(growths[idx] * 100).toFixed(1).replace(/\.0$/, "")}
+                  value={(g * 100).toFixed(1).replace(/\.0$/, "")}
                   onChange={(e) =>
-                    patch(growthPaths[idx], (parseFloat(e.target.value) || 0) / 100)
+                    setParams((p) => ({
+                      ...p,
+                      subs: {
+                        ...p.subs,
+                        growthRates: (p.subs.growthRates ?? []).map((x, i) =>
+                          i === idx ? (parseFloat(e.target.value) || 0) / 100 : x
+                        ),
+                      },
+                    }))
                   }
                   className="pr-7"
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                  %
-                </span>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
               </div>
               <div className="text-[10px] text-muted-foreground leading-tight">
-                Fin FY{yy}: <span className="font-semibold text-foreground">{fmtNum(endCounts[idx + 1])}</span> membres
+                Fin {tl.fyLabels[idx + 1]}: <span className="font-semibold text-foreground">{fmtNum(endCounts[idx + 1])}</span>
               </div>
             </div>
           ))}
@@ -163,57 +163,40 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
         <div className="flex items-center gap-2 mb-2">
           <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
           <h4 className="font-heading text-sm font-semibold uppercase tracking-wider">
-            Aperçu trajectoire (60 mois)
+            Aperçu trajectoire ({tl.horizonMonths} mois)
           </h4>
         </div>
         <div className="border rounded-md p-3 bg-muted/10">
-          <div className="flex items-end gap-3">
-            <svg
-              viewBox={`0 0 ${sparkW} ${sparkH}`}
-              preserveAspectRatio="none"
-              className="flex-1 h-16"
-            >
-              <polyline
-                fill="none"
-                stroke="#D32F2F"
-                strokeWidth="0.8"
-                points={points}
+          <svg
+            viewBox={`0 0 ${sparkW} ${sparkH}`}
+            preserveAspectRatio="none"
+            className="w-full h-16"
+          >
+            <polyline fill="none" stroke="#D32F2F" strokeWidth="0.8" points={points} />
+            {Array.from({ length: tl.horizonYears - 1 }, (_, i) => i + 1).map((fy) => (
+              <line
+                key={fy}
+                x1={(fy * 12 * sparkW) / Math.max(1, monthly.length - 1)}
+                y1={0}
+                x2={(fy * 12 * sparkW) / Math.max(1, monthly.length - 1)}
+                y2={sparkH}
+                stroke="#e5e5e5"
+                strokeWidth="0.3"
+                strokeDasharray="1 1"
               />
-              {[12, 24, 36, 48].map((m) => (
-                <line
-                  key={m}
-                  x1={(m * sparkW) / (monthly.length - 1)}
-                  y1={0}
-                  x2={(m * sparkW) / (monthly.length - 1)}
-                  y2={sparkH}
-                  stroke="#e5e5e5"
-                  strokeWidth="0.3"
-                  strokeDasharray="1 1"
-                />
-              ))}
-            </svg>
-          </div>
-          <div className="grid grid-cols-5 gap-1 text-[10px] text-muted-foreground mt-2 text-center">
+            ))}
+          </svg>
+          <div className={`grid gap-1 text-[10px] text-muted-foreground mt-2 text-center`} style={{ gridTemplateColumns: `repeat(${tl.horizonYears + 1}, 1fr)` }}>
             <div>
-              Sept 25
+              {tl.monthLabels[0]}
               <div className="text-foreground font-semibold">{fmtNum(subs.rampStartCount)}</div>
             </div>
-            <div>
-              Août 26
-              <div className="text-foreground font-semibold">{fmtNum(endCounts[0])}</div>
-            </div>
-            <div>
-              Août 27
-              <div className="text-foreground font-semibold">{fmtNum(endCounts[1])}</div>
-            </div>
-            <div>
-              Août 28
-              <div className="text-foreground font-semibold">{fmtNum(endCounts[2])}</div>
-            </div>
-            <div>
-              Août 29
-              <div className="text-foreground font-semibold">{fmtNum(endCounts[3])}</div>
-            </div>
+            {tl.fyLabels.map((lbl, i) => (
+              <div key={lbl}>
+                Fin {lbl}
+                <div className="text-foreground font-semibold">{fmtNum(endCounts[i] ?? 0)}</div>
+              </div>
+            ))}
           </div>
         </div>
       </section>

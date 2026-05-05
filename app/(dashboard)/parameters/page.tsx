@@ -36,7 +36,83 @@ export default function ParametersPage() {
         <ScenarioSwitcher />
       </header>
 
-      <Accordion defaultValue={["subs", "salaries"]} className="space-y-3">
+      <Accordion defaultValue={["timeline", "subs", "salaries"]} className="space-y-3">
+        <AccordionItem value="timeline" className="border rounded-lg bg-card border-[#D32F2F]/30">
+          <AccordionTrigger className="px-6 hover:no-underline">
+            <div className="text-left">
+              <div className="font-semibold">Timeline du projet</div>
+              <div className="text-xs text-muted-foreground font-normal">
+                Année de démarrage + horizon en années
+              </div>
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="px-6 pb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label className="text-xs">Année de démarrage (Sept N)</Label>
+                <select
+                  className="h-9 w-full rounded-md border bg-transparent px-3 text-sm mt-1.5"
+                  value={params.timeline.startYear}
+                  onChange={(e) => {
+                    const y = parseInt(e.target.value);
+                    setParams((p) => ({ ...p, timeline: { ...p.timeline, startYear: y } }));
+                  }}
+                >
+                  {[2024, 2025, 2026, 2027, 2028].map((y) => (
+                    <option key={y} value={y}>
+                      Sept {y} (FY{y % 100})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-muted-foreground mt-1">Premier mois du modèle</p>
+              </div>
+              <div>
+                <Label className="text-xs">Horizon (années)</Label>
+                <select
+                  className="h-9 w-full rounded-md border bg-transparent px-3 text-sm mt-1.5"
+                  value={params.timeline.horizonYears}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value);
+                    setParams((p) => {
+                      // Resize growthRates and rent.monthlyByFy
+                      const oldGrowths = p.subs.growthRates ?? [];
+                      const newGrowths = [...oldGrowths];
+                      while (newGrowths.length < n - 1) newGrowths.push(newGrowths[newGrowths.length - 1] ?? 0.10);
+                      newGrowths.length = Math.max(0, n - 1);
+                      const oldRent = p.rent.monthlyByFy ?? [];
+                      const newRent = [...oldRent];
+                      while (newRent.length < n) newRent.push(newRent[newRent.length - 1] ?? 12500);
+                      newRent.length = n;
+                      return {
+                        ...p,
+                        timeline: { ...p.timeline, horizonYears: n },
+                        subs: { ...p.subs, growthRates: newGrowths },
+                        rent: { ...p.rent, monthlyByFy: newRent },
+                      };
+                    });
+                  }}
+                >
+                  {[3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                    <option key={n} value={n}>
+                      {n} ans
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-muted-foreground mt-1">FY{params.timeline.startYear % 100} → FY{(params.timeline.startYear + params.timeline.horizonYears - 1) % 100}</p>
+              </div>
+              <div className="bg-muted/30 rounded-md p-3 text-xs">
+                <div className="text-muted-foreground">Période modélisée</div>
+                <div className="font-semibold mt-1">
+                  Sept {params.timeline.startYear} → Août {params.timeline.startYear + params.timeline.horizonYears}
+                </div>
+                <div className="text-muted-foreground mt-1">
+                  {params.timeline.horizonYears * 12} mois de projection
+                </div>
+              </div>
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+
         <AccordionItem value="subs" className="border rounded-lg bg-card">
           <AccordionTrigger className="px-6 hover:no-underline">
             <div className="text-left">
@@ -408,92 +484,170 @@ export default function ParametersPage() {
                   </p>
                 </div>
                 <span className="text-xs font-mono text-muted-foreground">
-                  Net: {fmtCurrency((params.salaries.freelancePools ?? []).reduce((s, p) => s + p.hourlyRate * p.monthlyHours, 0))}/mo
+                  Net: {fmtCurrency((params.salaries.freelancePools ?? []).reduce((s, pool) => {
+                    const h = pool.hoursPerWeekday !== undefined && pool.hoursPerWeekendDay !== undefined
+                      ? (pool.hoursPerWeekday * 5 + pool.hoursPerWeekendDay * 2) * 4.3
+                      : pool.monthlyHours;
+                    return s + pool.hourlyRate * h;
+                  }, 0))}/mo
                 </span>
               </div>
               <div className="space-y-2">
                 {(params.salaries.freelancePools ?? []).map((pool, idx) => {
-                  const total = pool.hourlyRate * pool.monthlyHours;
+                  const usingWeekly = pool.hoursPerWeekday !== undefined && pool.hoursPerWeekendDay !== undefined;
+                  const computedMonthly = usingWeekly
+                    ? ((pool.hoursPerWeekday ?? 0) * 5 + (pool.hoursPerWeekendDay ?? 0) * 2) * 4.3
+                    : pool.monthlyHours;
+                  const total = pool.hourlyRate * computedMonthly;
                   return (
-                    <div key={pool.id} className="grid grid-cols-12 gap-2 items-end p-3 border rounded-md bg-muted/20">
-                      <div className="col-span-12 md:col-span-5">
-                        <Label className="text-xs">Pool</Label>
-                        <Input
-                          value={pool.name}
-                          onChange={(e) =>
-                            setParams((p) => ({
-                              ...p,
-                              salaries: {
-                                ...p.salaries,
-                                freelancePools: (p.salaries.freelancePools ?? []).map((x, i) =>
-                                  i === idx ? { ...x, name: e.target.value } : x
-                                ),
-                              },
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="col-span-4 md:col-span-2">
-                        <Label className="text-xs">Tarif (€/h)</Label>
-                        <Input
-                          type="number"
-                          step="0.5"
-                          value={pool.hourlyRate}
-                          onChange={(e) =>
-                            setParams((p) => ({
-                              ...p,
-                              salaries: {
-                                ...p.salaries,
-                                freelancePools: (p.salaries.freelancePools ?? []).map((x, i) =>
-                                  i === idx ? { ...x, hourlyRate: parseFloat(e.target.value) || 0 } : x
-                                ),
-                              },
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="col-span-4 md:col-span-2">
-                        <Label className="text-xs">Heures/mo</Label>
-                        <Input
-                          type="number"
-                          step="0.1"
-                          value={pool.monthlyHours}
-                          onChange={(e) =>
-                            setParams((p) => ({
-                              ...p,
-                              salaries: {
-                                ...p.salaries,
-                                freelancePools: (p.salaries.freelancePools ?? []).map((x, i) =>
-                                  i === idx ? { ...x, monthlyHours: parseFloat(e.target.value) || 0 } : x
-                                ),
-                              },
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="col-span-3 md:col-span-2 text-right">
-                        <Label className="text-xs text-muted-foreground">Coût/mo</Label>
-                        <div className={"h-9 px-3 flex items-center justify-end rounded-md border bg-muted/40 text-xs font-mono " + (total < 0 ? "text-red-600" : "")}>
-                          {fmtCurrency(total)}
+                    <div key={pool.id} className="p-3 border rounded-md bg-muted/20 space-y-2">
+                      <div className="grid grid-cols-12 gap-2 items-end">
+                        <div className="col-span-12 md:col-span-6">
+                          <Label className="text-xs">Pool</Label>
+                          <Input
+                            value={pool.name}
+                            onChange={(e) =>
+                              setParams((p) => ({
+                                ...p,
+                                salaries: {
+                                  ...p.salaries,
+                                  freelancePools: (p.salaries.freelancePools ?? []).map((x, i) =>
+                                    i === idx ? { ...x, name: e.target.value } : x
+                                  ),
+                                },
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="col-span-6 md:col-span-2">
+                          <Label className="text-xs">Tarif (€/h)</Label>
+                          <Input
+                            type="number"
+                            step="0.5"
+                            value={pool.hourlyRate}
+                            onChange={(e) =>
+                              setParams((p) => ({
+                                ...p,
+                                salaries: {
+                                  ...p.salaries,
+                                  freelancePools: (p.salaries.freelancePools ?? []).map((x, i) =>
+                                    i === idx ? { ...x, hourlyRate: parseFloat(e.target.value) || 0 } : x
+                                  ),
+                                },
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="col-span-5 md:col-span-3 text-right">
+                          <Label className="text-xs text-muted-foreground">Coût/mo</Label>
+                          <div className={"h-9 px-3 flex items-center justify-end rounded-md border bg-muted/40 text-xs font-mono " + (total < 0 ? "text-red-600" : "")}>
+                            {fmtCurrency(total)}
+                          </div>
+                        </div>
+                        <div className="col-span-1 text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600"
+                            onClick={() =>
+                              setParams((p) => ({
+                                ...p,
+                                salaries: {
+                                  ...p.salaries,
+                                  freelancePools: (p.salaries.freelancePools ?? []).filter((_, i) => i !== idx),
+                                },
+                              }))
+                            }
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
-                      <div className="col-span-1 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-600"
-                          onClick={() =>
-                            setParams((p) => ({
-                              ...p,
-                              salaries: {
-                                ...p.salaries,
-                                freelancePools: (p.salaries.freelancePools ?? []).filter((_, i) => i !== idx),
-                              },
-                            }))
-                          }
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 items-end pt-2 border-t border-dashed">
+                        <div>
+                          <Label className="text-[10px] text-muted-foreground">h/jour ouvré (×5)</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            placeholder="—"
+                            value={pool.hoursPerWeekday ?? ""}
+                            onChange={(e) =>
+                              setParams((p) => ({
+                                ...p,
+                                salaries: {
+                                  ...p.salaries,
+                                  freelancePools: (p.salaries.freelancePools ?? []).map((x, i) =>
+                                    i === idx
+                                      ? {
+                                          ...x,
+                                          hoursPerWeekday:
+                                            e.target.value === "" ? undefined : parseFloat(e.target.value) || 0,
+                                        }
+                                      : x
+                                  ),
+                                },
+                              }))
+                            }
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-[10px] text-muted-foreground">h/jour weekend (×2)</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            placeholder="—"
+                            value={pool.hoursPerWeekendDay ?? ""}
+                            onChange={(e) =>
+                              setParams((p) => ({
+                                ...p,
+                                salaries: {
+                                  ...p.salaries,
+                                  freelancePools: (p.salaries.freelancePools ?? []).map((x, i) =>
+                                    i === idx
+                                      ? {
+                                          ...x,
+                                          hoursPerWeekendDay:
+                                            e.target.value === "" ? undefined : parseFloat(e.target.value) || 0,
+                                        }
+                                      : x
+                                  ),
+                                },
+                              }))
+                            }
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-[10px] text-muted-foreground">
+                            {usingWeekly ? "Heures/mo (auto)" : "Heures/mo (direct)"}
+                          </Label>
+                          {usingWeekly ? (
+                            <div className="h-9 px-3 flex items-center rounded-md border bg-muted/40 text-xs font-mono">
+                              {computedMonthly.toFixed(2)}h
+                            </div>
+                          ) : (
+                            <Input
+                              type="number"
+                              step="0.1"
+                              value={pool.monthlyHours}
+                              onChange={(e) =>
+                                setParams((p) => ({
+                                  ...p,
+                                  salaries: {
+                                    ...p.salaries,
+                                    freelancePools: (p.salaries.freelancePools ?? []).map((x, i) =>
+                                      i === idx ? { ...x, monthlyHours: parseFloat(e.target.value) || 0 } : x
+                                    ),
+                                  },
+                                }))
+                              }
+                            />
+                          )}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground self-center">
+                          {usingWeekly
+                            ? `Calcul: (${pool.hoursPerWeekday ?? 0}×5 + ${pool.hoursPerWeekendDay ?? 0}×2) × 4.3 sem/mo`
+                            : "Mode direct (sans hebdomadaire)"}
+                        </div>
                       </div>
                     </div>
                   );
@@ -528,10 +682,10 @@ export default function ParametersPage() {
           <AccordionContent className="px-6 pb-6 space-y-4">
             <div>
               <Label className="text-xs font-medium">Loyer mensuel par année (€)</Label>
-              <div className="grid grid-cols-5 gap-2 mt-1.5">
+              <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-7 gap-2 mt-1.5">
                 {params.rent.monthlyByFy.map((v, i) => (
                   <div key={i}>
-                    <Label className="text-[10px] text-muted-foreground">FY{25 + i}</Label>
+                    <Label className="text-[10px] text-muted-foreground">FY{(params.timeline.startYear + i) % 100}</Label>
                     <Input
                       type="number"
                       value={v}

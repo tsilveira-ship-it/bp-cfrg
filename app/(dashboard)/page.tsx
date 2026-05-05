@@ -27,7 +27,7 @@ export default function DashboardPage() {
 
   const yearly = result.yearly;
   const last = yearly[yearly.length - 1];
-  const fy25 = yearly[0];
+  const first = yearly[0];
 
   const yearlyChartData = yearly.map((y) => ({
     label: y.label,
@@ -69,7 +69,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Tableau de bord</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Business Plan CFRG — FY25 (Sept 2025) → FY29
+            Business Plan CFRG — {first.label} → {last.label} ({result.horizonYears} ans)
           </p>
         </div>
         <ScenarioSwitcher />
@@ -77,15 +77,15 @@ export default function DashboardPage() {
 
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
-          title="CA FY29"
+          title={`CA ${last.label}`}
           value={fmtCurrency(last.totalRevenue, { compact: true })}
-          subValue={`vs ${fmtCurrency(fy25.totalRevenue, { compact: true })} FY25`}
-          trend={(last.totalRevenue - fy25.totalRevenue) / fy25.totalRevenue}
+          subValue={`vs ${fmtCurrency(first.totalRevenue, { compact: true })} ${first.label}`}
+          trend={(last.totalRevenue - first.totalRevenue) / first.totalRevenue}
           intent="positive"
           icon={<TrendingUp className="h-4 w-4" />}
         />
         <KpiCard
-          title="EBITDA FY29"
+          title={`EBITDA ${last.label}`}
           value={fmtCurrency(last.ebitda, { compact: true })}
           subValue={`Marge ${fmtPct(last.ebitdaMargin)}`}
           intent={last.ebitda > 0 ? "positive" : "negative"}
@@ -115,7 +115,7 @@ export default function DashboardPage() {
         />
       </section>
 
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <section className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3">
         {yearly.map((y) => (
           <Card key={y.fy}>
             <CardHeader className="pb-2">
