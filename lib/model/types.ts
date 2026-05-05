@@ -30,6 +30,19 @@ export type CapexItem = {
   amortYears: number;     // 0 = non amorti
 };
 
+/** Réel observé pour un mois donné — pour comparaison réel vs prévu (#20). */
+export type ActualEntry = {
+  monthIso: string;             // YYYY-MM (ex: "2026-09" pour Sept 2026 = M0 si FY26)
+  revenue?: number;
+  salaries?: number;
+  rent?: number;
+  recurring?: number;           // entretien + frais op
+  marketing?: number;
+  other?: number;               // autres OPEX
+  cashEnd?: number;
+  notes?: string;
+};
+
 export type FieldNote = {
   note: string;
   author?: string;        // email auteur de la note (si dispo)
@@ -216,6 +229,7 @@ export type ModelParams = {
 
   notes?: Record<string, string>;     // notes textuelles libres par scénario
   fieldNotes?: Record<string, FieldNote>; // annotations par champ (path → note + auteur + date)
+  actuals?: ActualEntry[];            // réels mensuels observés (#20)
 
   legacy: {
     startCount: number;

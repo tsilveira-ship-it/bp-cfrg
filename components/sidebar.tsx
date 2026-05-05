@@ -22,6 +22,9 @@ import {
   Activity,
   Printer,
   History,
+  HeartPulse,
+  Waves,
+  GitCompareArrows,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "@/components/user-menu";
@@ -54,8 +57,11 @@ const GROUPS: Group[] = [
     items: [
       { href: "/investor", label: "Investisseur", icon: Briefcase },
       { href: "/sensitivity", label: "Sensibilité", icon: TrendingDown },
+      { href: "/waterfalls", label: "Waterfall charts", icon: Waves },
       { href: "/capacity", label: "Capacité", icon: Activity },
       { href: "/audit", label: "Audit & risques", icon: ShieldAlert },
+      { href: "/health-check", label: "Health check", icon: HeartPulse },
+      { href: "/variance", label: "Variance (réel/prévu)", icon: GitCompareArrows },
     ],
   },
   {
