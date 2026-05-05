@@ -2,7 +2,13 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { DEFAULT_PARAMS, AUDIT_CORRECTED_PARAMS } from "./model/defaults";
-import { normalizeParams, type FieldNote, type ModelParams } from "./model/types";
+import {
+  normalizeParams,
+  type FieldComment,
+  type FieldNote,
+  type FieldQA,
+  type ModelParams,
+} from "./model/types";
 
 type ScenarioName = "base" | "audit" | "custom";
 
@@ -19,6 +25,9 @@ type Store = {
   patch: (path: string, value: unknown) => void;
   setFieldNote: (path: string, note: string, author?: string) => void;
   clearFieldNote: (path: string) => void;
+  addFieldComment: (path: string, text: string, author?: string) => void;
+  removeFieldComment: (path: string, commentId: string) => void;
+  toggleCommentResolved: (path: string, commentId: string) => void;
   applyScenario: (s: ScenarioName) => void;
   setLoaded: (l: LoadedRef) => void;
   loadParams: (params: ModelParams, ref: LoadedRef) => void;
@@ -70,6 +79,49 @@ export const useModelStore = create<Store>()(
           delete next[path];
           return {
             params: { ...s.params, fieldNotes: next },
+            scenario: "custom",
+          };
+        }),
+      addFieldComment: (path, text, author) =>
+        set((s) => {
+          const trimmed = text.trim();
+          if (!trimmed) return s;
+          const qa: Record<string, FieldQA> = { ...(s.params.fieldQA ?? {}) };
+          const existing = qa[path] ?? { comments: [] };
+          const comment: FieldComment = {
+            id: `c_${Math.random().toString(36).slice(2, 10)}`,
+            author,
+            date: new Date().toISOString(),
+            text: trimmed,
+          };
+          qa[path] = { comments: [...existing.comments, comment] };
+          return {
+            params: { ...s.params, fieldQA: qa },
+            scenario: "custom",
+          };
+        }),
+      removeFieldComment: (path, commentId) =>
+        set((s) => {
+          const qa = s.params.fieldQA;
+          if (!qa || !qa[path]) return s;
+          const filtered = qa[path].comments.filter((c) => c.id !== commentId);
+          const next = { ...qa };
+          if (filtered.length === 0) delete next[path];
+          else next[path] = { comments: filtered };
+          return {
+            params: { ...s.params, fieldQA: next },
+            scenario: "custom",
+          };
+        }),
+      toggleCommentResolved: (path, commentId) =>
+        set((s) => {
+          const qa = s.params.fieldQA;
+          if (!qa || !qa[path]) return s;
+          const updated = qa[path].comments.map((c) =>
+            c.id === commentId ? { ...c, resolved: !c.resolved } : c
+          );
+          return {
+            params: { ...s.params, fieldQA: { ...qa, [path]: { comments: updated } } },
             scenario: "custom",
           };
         }),
