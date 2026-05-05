@@ -25,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { fmtCurrency, fmtPct, fmtNum } from "@/lib/format";
+import { InfoLabel } from "@/components/info-label";
 import { TrendingUp, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 export default function InvestorMetricsPage() {
@@ -108,7 +109,7 @@ export default function InvestorMetricsPage() {
         <Card>
           <CardContent className="pt-5">
             <div className="text-xs text-muted-foreground uppercase tracking-wider">
-              IRR equity
+              <InfoLabel label="IRR equity" />
             </div>
             <div
               className={
@@ -130,7 +131,7 @@ export default function InvestorMetricsPage() {
         <Card>
           <CardContent className="pt-5">
             <div className="text-xs text-muted-foreground uppercase tracking-wider">
-              Multiple equity
+              <InfoLabel label="Multiple equity" />
             </div>
             <div className="text-2xl font-bold mt-1">{equityRet.multiple.toFixed(2)}x</div>
             <div className="text-xs text-muted-foreground mt-1">
@@ -141,7 +142,7 @@ export default function InvestorMetricsPage() {
         <Card>
           <CardContent className="pt-5">
             <div className="text-xs text-muted-foreground uppercase tracking-wider">
-              NPV (op)
+              <InfoLabel label="NPV" override="Net Present Value (Valeur Actuelle Nette). Somme des cashflows futurs ramenés à aujourd'hui via un taux d'actualisation. Positif = projet rentable au-delà du coût du capital." />
             </div>
             <div className={"text-2xl font-bold mt-1 " + (npvOp >= 0 ? "" : "text-red-600")}>
               {fmtCurrency(npvOp, { compact: true })}
@@ -153,7 +154,9 @@ export default function InvestorMetricsPage() {
         </Card>
         <Card>
           <CardContent className="pt-5">
-            <div className="text-xs text-muted-foreground uppercase tracking-wider">Payback</div>
+            <div className="text-xs text-muted-foreground uppercase tracking-wider">
+              <InfoLabel label="Payback" />
+            </div>
             <div className="text-2xl font-bold mt-1">
               {paybackMo !== null ? `${(paybackMo / 12).toFixed(1)} ans` : "—"}
             </div>
@@ -215,7 +218,9 @@ export default function InvestorMetricsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">DSCR — Couverture du service de la dette</CardTitle>
+          <CardTitle className="text-base">
+            <InfoLabel label="DSCR" /> — Couverture du service de la dette
+          </CardTitle>
           <p className="text-xs text-muted-foreground">
             CFO ÷ (intérêts + remboursement capital). Banque exige typiquement &gt; 1.2x.
           </p>
@@ -305,7 +310,9 @@ export default function InvestorMetricsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">LTV / CAC</CardTitle>
+            <CardTitle className="text-base">
+              <InfoLabel label="LTV" /> / <InfoLabel label="CAC" />
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex justify-between text-sm">

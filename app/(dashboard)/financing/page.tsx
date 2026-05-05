@@ -11,6 +11,7 @@ import { BondsEditor } from "@/components/financing/bonds-editor";
 import { BondSimulator } from "@/components/financing/bond-simulator";
 import { FinancingTimeline } from "@/components/financing/financing-timeline";
 import { fmtCurrency } from "@/lib/format";
+import { InfoLabel } from "@/components/info-label";
 
 export default function FinancingPage() {
   const params = useModelStore((s) => s.params);
@@ -40,28 +41,28 @@ export default function FinancingPage() {
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <Card>
           <CardContent className="pt-5">
-            <div className="text-xs text-muted-foreground uppercase tracking-wider">Apports</div>
+            <div className="text-xs text-muted-foreground uppercase tracking-wider"><InfoLabel label="Apports" /></div>
             <div className="text-2xl font-bold mt-1">{fmtCurrency(totalEquity, { compact: true })}</div>
             <div className="text-xs text-muted-foreground mt-1">{(params.financing.equity ?? []).length} ligne(s)</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-5">
-            <div className="text-xs text-muted-foreground uppercase tracking-wider">Emprunts</div>
+            <div className="text-xs text-muted-foreground uppercase tracking-wider"><InfoLabel label="Emprunts" /></div>
             <div className="text-2xl font-bold mt-1">{fmtCurrency(totalLoans, { compact: true })}</div>
             <div className="text-xs text-muted-foreground mt-1">{(params.financing.loans ?? []).length} prêt(s)</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-5">
-            <div className="text-xs text-muted-foreground uppercase tracking-wider">Obligations</div>
+            <div className="text-xs text-muted-foreground uppercase tracking-wider"><InfoLabel label="Obligations" /></div>
             <div className="text-2xl font-bold mt-1">{fmtCurrency(totalBonds, { compact: true })}</div>
             <div className="text-xs text-muted-foreground mt-1">{(params.financing.bonds ?? []).length} émission(s)</div>
           </CardContent>
         </Card>
         <Card className="bg-[#D32F2F]/5 border-[#D32F2F]/30">
           <CardContent className="pt-5">
-            <div className="text-xs text-muted-foreground uppercase tracking-wider">Total levé</div>
+            <div className="text-xs text-muted-foreground uppercase tracking-wider"><InfoLabel label="Total levé" /></div>
             <div className="text-2xl font-bold mt-1 text-[#D32F2F]">{fmtCurrency(totalRaise, { compact: true })}</div>
             <div className="text-xs text-muted-foreground mt-1">tout flux confondu</div>
           </CardContent>

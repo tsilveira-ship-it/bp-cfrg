@@ -8,6 +8,7 @@ import { ScenarioSwitcher } from "@/components/scenario-switcher";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fmtNum, fmtPct } from "@/lib/format";
+import { InfoLabel } from "@/components/info-label";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -115,7 +116,7 @@ export default function CapacityPage() {
         <Card>
           <CardContent className="pt-5">
             <div className="text-xs text-muted-foreground uppercase tracking-wider">
-              Saturation max
+              <InfoLabel label="Saturation max" />
             </div>
             <div
               className={
@@ -133,7 +134,7 @@ export default function CapacityPage() {
         <Card>
           <CardContent className="pt-5">
             <div className="text-xs text-muted-foreground uppercase tracking-wider">
-              Capacité théorique max
+              <InfoLabel label="Capacité théorique max" />
             </div>
             <div className="text-2xl font-bold mt-1">
               {fmtNum((totalCoachingHours * classCapacity) / avgSessionsPerMonth)}

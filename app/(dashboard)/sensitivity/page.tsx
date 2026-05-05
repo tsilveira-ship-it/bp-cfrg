@@ -9,6 +9,7 @@ import { SynthesisCard } from "@/components/synthesis-card";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { fmtCurrency, fmtPct } from "@/lib/format";
+import { InfoLabel } from "@/components/info-label";
 import { TrendingDown, TrendingUp, Zap, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
@@ -280,7 +281,9 @@ function ImpactKpi({
   return (
     <Card>
       <CardContent className="pt-5">
-        <div className="text-xs text-muted-foreground uppercase tracking-wider">{label}</div>
+        <div className="text-xs text-muted-foreground uppercase tracking-wider">
+          <InfoLabel label={label} />
+        </div>
         <div
           className={
             "text-xl font-bold mt-1 " + (warningIfNegative && sens < 0 ? "text-red-600" : "")

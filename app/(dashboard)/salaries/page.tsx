@@ -32,6 +32,7 @@ import {
 import { fmtCurrency, fmtNum } from "@/lib/format";
 import { StartMonthPicker } from "@/components/start-month-picker";
 import { FreelancePoolsEditor } from "@/components/freelance-pools-editor";
+import { InfoLabel } from "@/components/info-label";
 import { Trash2, Plus, Calculator, Users, UserCog } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -124,7 +125,7 @@ export default function SalariesPage() {
         <Card>
           <CardContent className="pt-5">
             <div className="text-xs text-muted-foreground uppercase tracking-wider">
-              Effectif cadre (FTE)
+              <InfoLabel label="Effectif cadre (FTE)" />
             </div>
             <div className="text-2xl font-bold mt-1">
               {fmtNum(items.reduce((s, x) => s + x.fte, 0), 1)}
@@ -135,7 +136,7 @@ export default function SalariesPage() {
         <Card>
           <CardContent className="pt-5">
             <div className="text-xs text-muted-foreground uppercase tracking-wider">
-              Coût mensuel cadre
+              <InfoLabel label="Coût mensuel cadre" />
             </div>
             <div className="text-2xl font-bold mt-1">
               {fmtCurrency((yearlySummary[0]?.cadres ?? 0) / 12)}
@@ -146,7 +147,7 @@ export default function SalariesPage() {
         <Card>
           <CardContent className="pt-5">
             <div className="text-xs text-muted-foreground uppercase tracking-wider">
-              Coût mensuel freelance
+              <InfoLabel label="Coût mensuel freelance" />
             </div>
             <div className="text-2xl font-bold mt-1">
               {fmtCurrency((yearlySummary[0]?.freelance ?? 0) / 12)}
@@ -156,7 +157,7 @@ export default function SalariesPage() {
         </Card>
         <Card className="bg-[#D32F2F]/5 border-[#D32F2F]/30">
           <CardContent className="pt-5">
-            <div className="text-xs text-muted-foreground uppercase tracking-wider">Total annuel 1</div>
+            <div className="text-xs text-muted-foreground uppercase tracking-wider"><InfoLabel label="Total annuel 1" /></div>
             <div className="text-2xl font-bold mt-1 text-[#D32F2F]">
               {fmtCurrency(yearlySummary[0]?.total ?? 0, { compact: true })}
             </div>
