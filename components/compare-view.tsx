@@ -1,9 +1,11 @@
 "use client";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { ScenarioRow } from "@/app/actions/scenarios";
 import { computeModel } from "@/lib/model/compute";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -66,7 +68,23 @@ function fmtVal(v: unknown): string {
 export function CompareView({ a, b }: { a: ScenarioRow; b: ScenarioRow }) {
   const ra = useMemo(() => computeModel(a.params), [a.params]);
   const rb = useMemo(() => computeModel(b.params), [b.params]);
-  const diffs = useMemo(() => diffParams(a.params, b.params), [a.params, b.params]);
+  const [includeNotes, setIncludeNotes] = useState(false);
+  const allDiffs = useMemo(() => diffParams(a.params, b.params), [a.params, b.params]);
+  const diffs = useMemo(
+    () =>
+      includeNotes
+        ? allDiffs
+        : allDiffs.filter((d) => !d.path.startsWith("fieldNotes") && !d.path.startsWith("notes")),
+    [allDiffs, includeNotes]
+  );
+  const grouped = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const d of diffs) {
+      const top = d.path.split(/[.[]/)[0];
+      map[top] = (map[top] ?? 0) + 1;
+    }
+    return map;
+  }, [diffs]);
 
   const lastA = ra.yearly[ra.yearly.length - 1];
   const lastB = rb.yearly[rb.yearly.length - 1];
@@ -169,7 +187,24 @@ export function CompareView({ a, b }: { a: ScenarioRow; b: ScenarioRow }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Paramètres modifiés ({diffs.length})</CardTitle>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <CardTitle className="text-lg">Paramètres modifiés ({diffs.length})</CardTitle>
+            <div className="flex items-center gap-2">
+              <Switch checked={includeNotes} onCheckedChange={setIncludeNotes} id="incl-notes" />
+              <Label htmlFor="incl-notes" className="text-xs cursor-pointer">
+                Inclure notes/annotations
+              </Label>
+            </div>
+          </div>
+          {Object.keys(grouped).length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2">
+              {Object.entries(grouped).map(([k, n]) => (
+                <Badge key={k} variant="secondary" className="text-[10px]">
+                  {k} ({n})
+                </Badge>
+              ))}
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {diffs.length === 0 ? (
