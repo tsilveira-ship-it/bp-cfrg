@@ -6,12 +6,20 @@ import type { ModelParams } from "./model/types";
 
 type ScenarioName = "base" | "audit" | "custom";
 
+type LoadedRef =
+  | { kind: "none" }
+  | { kind: "master"; id: string; name: string; version: number }
+  | { kind: "fork"; id: string; name: string };
+
 type Store = {
   params: ModelParams;
   scenario: ScenarioName;
+  loaded: LoadedRef;
   setParams: (updater: (p: ModelParams) => ModelParams) => void;
   patch: (path: string, value: unknown) => void;
   applyScenario: (s: ScenarioName) => void;
+  setLoaded: (l: LoadedRef) => void;
+  loadParams: (params: ModelParams, ref: LoadedRef) => void;
   reset: () => void;
 };
 
@@ -33,6 +41,7 @@ export const useModelStore = create<Store>()(
     (set) => ({
       params: DEFAULT_PARAMS,
       scenario: "base",
+      loaded: { kind: "none" } as LoadedRef,
       setParams: (updater) =>
         set((s) => ({ params: updater(s.params), scenario: "custom" })),
       patch: (path, value) =>
@@ -41,9 +50,14 @@ export const useModelStore = create<Store>()(
         set(() => ({
           scenario: sc,
           params: sc === "audit" ? AUDIT_CORRECTED_PARAMS : DEFAULT_PARAMS,
+          loaded: { kind: "none" },
         })),
-      reset: () => set(() => ({ params: DEFAULT_PARAMS, scenario: "base" })),
+      setLoaded: (l) => set(() => ({ loaded: l })),
+      loadParams: (params, ref) =>
+        set(() => ({ params, loaded: ref, scenario: "custom" })),
+      reset: () =>
+        set(() => ({ params: DEFAULT_PARAMS, scenario: "base", loaded: { kind: "none" } })),
     }),
-    { name: "cfrg-bp-params-v1" }
+    { name: "cfrg-bp-params-v2" }
   )
 );

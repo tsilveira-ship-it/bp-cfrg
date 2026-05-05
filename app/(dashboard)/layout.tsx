@@ -1,5 +1,6 @@
 import { Sidebar } from "@/components/sidebar";
 import { ActiveScenarioLoader } from "@/components/active-scenario-loader";
+import { AutoSaver } from "@/components/auto-saver";
 import { getMyRole } from "@/app/actions/access";
 
 export default async function DashboardLayout({
@@ -21,6 +22,7 @@ export default async function DashboardLayout({
         <div className="mx-auto w-full max-w-[1600px] p-6 lg:p-10">{children}</div>
       </main>
       <ActiveScenarioLoader />
+      <AutoSaver />
     </div>
   );
 }

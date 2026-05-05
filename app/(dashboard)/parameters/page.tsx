@@ -13,6 +13,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
+import { SubsEvolutionEditor } from "@/components/subs-evolution-editor";
 import { Trash2, Plus } from "lucide-react";
 import { fmtPct, fmtCurrency } from "@/lib/format";
 
@@ -162,39 +163,7 @@ export default function ParametersPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <ParamNumber
-                path="subs.vatRate"
-                label="TVA"
-                value={params.subs.vatRate ?? 0.20}
-                unit="%"
-                step={0.5}
-                hint="Modèle CA = HT = TTC ÷ (1+TVA)"
-              />
-              <ParamNumber
-                path="subs.rampStartCount"
-                label="Nouveaux abos Sept 2025"
-                value={params.subs.rampStartCount}
-              />
-              <ParamNumber
-                path="subs.rampEndCount"
-                label="Nouveaux abos Août 2026"
-                value={params.subs.rampEndCount}
-                hint="Cible fin FY25, ramp linéaire"
-              />
-              <ParamNumber
-                path="subs.priceIndexPa"
-                label="Indexation tarifs / an"
-                value={params.subs.priceIndexPa}
-                unit="%"
-                step={0.5}
-                hint="Hausse annuelle composée"
-              />
-              <ParamNumber path="subs.fy26GrowthPct" label="Croissance FY26" value={params.subs.fy26GrowthPct} unit="%" step={1} />
-              <ParamNumber path="subs.fy27GrowthPct" label="Croissance FY27" value={params.subs.fy27GrowthPct} unit="%" step={1} />
-              <ParamNumber path="subs.fy28GrowthPct" label="Croissance FY28" value={params.subs.fy28GrowthPct} unit="%" step={1} />
-              <ParamNumber path="subs.fy29GrowthPct" label="Croissance FY29" value={params.subs.fy29GrowthPct} unit="%" step={1} />
-            </div>
+            <SubsEvolutionEditor params={params} setParams={setParams} patch={patch} />
           </AccordionContent>
         </AccordionItem>
 

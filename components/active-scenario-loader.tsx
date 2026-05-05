@@ -1,38 +1,52 @@
 "use client";
 import { useEffect, useRef } from "react";
 import { useModelStore } from "@/lib/store";
-import { getActiveScenario } from "@/app/actions/scenarios";
+import { getCurrentMaster, getScenarioById } from "@/app/actions/scenarios";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function ActiveScenarioLoader() {
-  const setParams = useModelStore((s) => s.setParams);
-  const loaded = useRef(false);
+  const loadParams = useModelStore((s) => s.loadParams);
+  const loaded = useModelStore((s) => s.loaded);
+  const ranOnce = useRef(false);
 
   useEffect(() => {
+    if (ranOnce.current) return;
+    ranOnce.current = true;
     const supabase = createSupabaseBrowserClient();
+
     const tryLoad = async () => {
-      if (loaded.current) return;
       const { data } = await supabase.auth.getUser();
       if (!data.user) return;
+
       try {
-        const sc = await getActiveScenario();
-        if (sc) {
-          setParams(() => sc.params);
-          loaded.current = true;
+        // If user already has a loaded scenario from previous session, refresh its params from DB
+        if (loaded.kind === "fork" || loaded.kind === "master") {
+          const sc = await getScenarioById(loaded.id);
+          if (sc) {
+            loadParams(sc.params, sc.is_master
+              ? { kind: "master", id: sc.id, name: sc.name, version: sc.version }
+              : { kind: "fork", id: sc.id, name: sc.name });
+            return;
+          }
+          // Scenario disappeared — fall through to master
+        }
+
+        // Default: load current master
+        const master = await getCurrentMaster();
+        if (master) {
+          loadParams(master.params, {
+            kind: "master",
+            id: master.id,
+            name: master.name,
+            version: master.version,
+          });
         }
       } catch {
         // ignore
       }
     };
     tryLoad();
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_IN") {
-        loaded.current = false;
-        tryLoad();
-      }
-    });
-    return () => sub.subscription.unsubscribe();
-  }, [setParams]);
+  }, [loadParams, loaded]);
 
   return null;
 }

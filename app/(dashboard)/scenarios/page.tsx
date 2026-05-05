@@ -1,15 +1,19 @@
 import { ScenariosManager } from "@/components/scenarios-manager";
+import { getMyRole } from "@/app/actions/access";
 
-export default function ScenariosPage() {
+export default async function ScenariosPage() {
+  const role = await getMyRole();
+  const isAdmin = role === "admin";
+
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-3xl font-bold tracking-tight">Mes scénarios</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Scénarios</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Sauvegarde, charge et compare différents scénarios de business plan.
+          Versions Master partagées + tes forks personnels.
         </p>
       </header>
-      <ScenariosManager />
+      <ScenariosManager isAdmin={isAdmin} />
     </div>
   );
 }
