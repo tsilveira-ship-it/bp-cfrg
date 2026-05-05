@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useModelStore } from "@/lib/store";
 import { computeModel } from "@/lib/model/compute";
 import { effectiveMonthlyHours } from "@/lib/model/types";
@@ -30,22 +30,45 @@ const tooltipStyle = {
   fontSize: "12px",
 };
 
+const DEFAULT_CAPACITY = {
+  parallelClasses: 1,
+  capacityPerClass: 15,
+  capacityPerClassMin: 12,
+  capacityPerClassMax: 16,
+  avgSessionsPerMonth: 8,
+};
+
 export default function CapacityPage() {
   const params = useModelStore((s) => s.params);
+  const patch = useModelStore((s) => s.patch);
+  const setParams = useModelStore((s) => s.setParams);
   const result = useMemo(() => computeModel(params), [params]);
 
-  const [avgSessionsPerMonth, setAvgSessionsPerMonth] = useState(8);
-  const [classCapacity, setClassCapacity] = useState(15);
+  const cap = params.capacity ?? DEFAULT_CAPACITY;
+  const parallel = cap.parallelClasses;
+  const capPerClass = cap.capacityPerClass;
+  const capMin = cap.capacityPerClassMin ?? capPerClass;
+  const capMax = cap.capacityPerClassMax ?? capPerClass;
+  const avgSessions = cap.avgSessionsPerMonth;
+
+  const enableCapacity = () => {
+    setParams((p) => ({ ...p, capacity: { ...DEFAULT_CAPACITY, ...(p.capacity ?? {}) } }));
+  };
 
   // Heures totales coaching dispo (pools positifs uniquement)
   const totalCoachingHours = (params.salaries.freelancePools ?? [])
     .filter((p) => p.monthlyHours > 0 || (p.hoursPerWeekday ?? 0) > 0)
     .reduce((s, p) => s + Math.max(0, effectiveMonthlyHours(p)), 0);
 
+  // 1h de coaching ouvre `parallelClasses` cours en parallèle, chacun à `capPerClass` membres
+  const slotsPerHour = parallel * capPerClass;
+  const slotsPerHourMin = parallel * capMin;
+  const slotsPerHourMax = parallel * capMax;
+
   const data = result.monthly.map((m) => {
     const totalMembers = m.subsCount + m.legacyCount;
-    const sessionsDemand = totalMembers * avgSessionsPerMonth;
-    const sessionsSupply = totalCoachingHours * classCapacity; // 1h coaching = X membres
+    const sessionsDemand = totalMembers * avgSessions;
+    const sessionsSupply = totalCoachingHours * slotsPerHour;
     const saturation = sessionsSupply > 0 ? sessionsDemand / sessionsSupply : 0;
     return {
       label: m.label,
@@ -57,6 +80,10 @@ export default function CapacityPage() {
 
   const maxSat = Math.max(...data.map((d) => d.saturationVal));
   const maxSatMonth = data.find((d) => d.saturationVal === maxSat);
+
+  const maxMembersTheoretical = (totalCoachingHours * slotsPerHour) / avgSessions;
+  const maxMembersMin = (totalCoachingHours * slotsPerHourMin) / avgSessions;
+  const maxMembersMax = (totalCoachingHours * slotsPerHourMax) / avgSessions;
 
   return (
     <div className="space-y-6">
@@ -73,39 +100,116 @@ export default function CapacityPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Hypothèses capacité</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Paramètres liés au scénario (sauvegardés via auto-save).
+          </p>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <Label className="text-xs">Heures coaching dispo / mo</Label>
-              <div className="h-9 px-3 flex items-center rounded-md border bg-muted/40 font-mono text-sm">
-                {totalCoachingHours.toFixed(1)}h
+        <CardContent className="space-y-4">
+          {!params.capacity && (
+            <div className="rounded-md border border-amber-300 bg-amber-50/40 p-3 text-xs text-amber-800 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <div className="font-semibold">Capacité utilise des valeurs par défaut</div>
+                <p className="text-amber-700/80 mt-0.5">
+                  Pour persister tes propres paramètres dans le scénario (et les exporter),
+                  active le bloc capacité.
+                </p>
+                <button
+                  onClick={enableCapacity}
+                  className="mt-2 text-xs font-medium underline underline-offset-2 hover:no-underline"
+                >
+                  Activer la capacité paramétrée
+                </button>
               </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <Label className="text-xs">Cours en parallèle (par créneau)</Label>
+              <Input
+                type="number"
+                min={1}
+                max={6}
+                value={parallel}
+                onChange={(e) =>
+                  patch("capacity.parallelClasses", parseInt(e.target.value) || 1)
+                }
+              />
               <p className="text-[10px] text-muted-foreground mt-1">
-                Somme des pools freelance positifs (Floor + Hyrox + Sandbox + Accueil).
+                Ex: 2 si tu fais tourner 2 WODs simultanés (Hyrox + CrossFit) sur le même créneau.
               </p>
             </div>
+            <div>
+              <Label className="text-xs">Capacité moyenne par cours</Label>
+              <Input
+                type="number"
+                value={capPerClass}
+                onChange={(e) =>
+                  patch("capacity.capacityPerClass", parseFloat(e.target.value) || 0)
+                }
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Sert au calcul de saturation. Ex: 14 (mid-point 12-16).
+              </p>
+            </div>
+            <div>
+              <Label className="text-xs">Capacité min (range)</Label>
+              <Input
+                type="number"
+                value={capMin}
+                onChange={(e) =>
+                  patch("capacity.capacityPerClassMin", parseFloat(e.target.value) || 0)
+                }
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">Borne basse (ex: 12).</p>
+            </div>
+            <div>
+              <Label className="text-xs">Capacité max (range)</Label>
+              <Input
+                type="number"
+                value={capMax}
+                onChange={(e) =>
+                  patch("capacity.capacityPerClassMax", parseFloat(e.target.value) || 0)
+                }
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">Borne haute (ex: 16).</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <Label className="text-xs">Sessions/membre/mois (moyen)</Label>
               <Input
                 type="number"
-                step="0.5"
-                value={avgSessionsPerMonth}
-                onChange={(e) => setAvgSessionsPerMonth(parseFloat(e.target.value) || 0)}
+                step={0.5}
+                value={avgSessions}
+                onChange={(e) =>
+                  patch("capacity.avgSessionsPerMonth", parseFloat(e.target.value) || 0)
+                }
               />
               <p className="text-[10px] text-muted-foreground mt-1">
-                Moyenne pondérée par mix tier. ~8-10 sessions typique.
+                Moyenne pondérée par mix tier. ~8-10 typique.
               </p>
             </div>
             <div>
-              <Label className="text-xs">Capacité par cours (membres/h)</Label>
-              <Input
-                type="number"
-                value={classCapacity}
-                onChange={(e) => setClassCapacity(parseFloat(e.target.value) || 0)}
-              />
+              <Label className="text-xs">Heures coaching dispo / mois</Label>
+              <div className="h-9 px-3 flex items-center rounded-md border bg-muted/40 font-mono text-sm">
+                {totalCoachingHours.toFixed(1)}h
+              </div>
               <p className="text-[10px] text-muted-foreground mt-1">
-                CrossFit standard: 12-15 personnes par classe.
+                Somme des pools freelance positifs (édité dans /salaries).
+              </p>
+            </div>
+            <div>
+              <Label className="text-xs">Slots/h effectifs</Label>
+              <div className="h-9 px-3 flex items-center rounded-md border bg-muted/40 font-mono text-sm">
+                {slotsPerHour}{" "}
+                <span className="text-xs text-muted-foreground ml-2">
+                  ({parallel} × {capPerClass})
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Range: {slotsPerHourMin} – {slotsPerHourMax} membres/h.
               </p>
             </div>
           </div>
@@ -136,10 +240,10 @@ export default function CapacityPage() {
             <div className="text-xs text-muted-foreground uppercase tracking-wider">
               <InfoLabel label="Capacité théorique max" />
             </div>
-            <div className="text-2xl font-bold mt-1">
-              {fmtNum((totalCoachingHours * classCapacity) / avgSessionsPerMonth)}
+            <div className="text-2xl font-bold mt-1">{fmtNum(maxMembersTheoretical)}</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              membres simultanés ({fmtNum(maxMembersMin)} – {fmtNum(maxMembersMax)})
             </div>
-            <div className="text-xs text-muted-foreground mt-1">membres simultanés</div>
           </CardContent>
         </Card>
         <Card>
@@ -171,7 +275,8 @@ export default function CapacityPage() {
         <CardHeader>
           <CardTitle className="text-base">Évolution membres + saturation</CardTitle>
           <p className="text-xs text-muted-foreground">
-            La ligne 100% = capacité maximum théorique. Au-delà → recruter / scaler heures.
+            La ligne 100% = capacité maximum théorique avec {parallel} cours en parallèle ×{" "}
+            {capPerClass} membres/cours. Au-delà → recruter coachs ou ajouter créneaux.
           </p>
         </CardHeader>
         <CardContent>

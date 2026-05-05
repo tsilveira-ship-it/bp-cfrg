@@ -176,13 +176,11 @@ export function runHealthCheck(p: ModelParams, result?: ModelResult): HealthIssu
       });
     }
 
-    // 11. Capacité: heures coaching vs membres (heuristique simple)
+    // 11. Capacité: utilise params.capacity si défini, sinon heuristique simple
     const lastFy = result.yearly[result.yearly.length - 1];
     const lastMonth = result.monthly[result.monthly.length - 1];
     if (lastMonth) {
       const subsCount = lastMonth.subsCount + lastMonth.legacyCount;
-      // hypothèse: ~3 séances/membre/semaine → 12 séances/mois × 1h = 12h/membre/mois
-      const hoursDemanded = subsCount * 12;
       const pools = p.salaries.freelancePools ?? [];
       const monthlyCoachHours = pools.reduce((s, pool) => {
         const h =
@@ -191,22 +189,41 @@ export function runHealthCheck(p: ModelParams, result?: ModelResult): HealthIssu
             : pool.monthlyHours;
         return s + h;
       }, 0);
-      // Ajoute les coaches salariés (estim 30h cours/sem = 130h/mois)
-      const cadreCoachItems = p.salaries.items.filter((it) =>
-        /coach|head/i.test(it.role)
-      );
-      const cadreHours = cadreCoachItems.reduce((s, it) => s + it.fte * 130, 0);
-      const totalHoursAvailable = monthlyCoachHours + cadreHours;
 
-      if (totalHoursAvailable > 0 && hoursDemanded > totalHoursAvailable * 0.95) {
-        issues.push({
-          id: "capacity",
-          severity: hoursDemanded > totalHoursAvailable ? "critical" : "warning",
-          title: "Capacité coaching saturée",
-          message: `${subsCount} membres → ~${hoursDemanded}h/mois de demande vs ${totalHoursAvailable.toFixed(0)}h offertes.`,
-          hint: "Recrute ou ajoute un freelance pool.",
-          link: { href: "/capacity", label: "Voir capacité" },
-        });
+      const cap = p.capacity;
+      if (cap) {
+        const slotsPerHour = cap.parallelClasses * cap.capacityPerClass;
+        const sessionsSupply = monthlyCoachHours * slotsPerHour;
+        const sessionsDemand = subsCount * cap.avgSessionsPerMonth;
+        const saturation = sessionsSupply > 0 ? sessionsDemand / sessionsSupply : 0;
+        if (saturation > 0.95) {
+          issues.push({
+            id: "capacity",
+            severity: saturation > 1 ? "critical" : "warning",
+            title: `Capacité ${(saturation * 100).toFixed(0)}% en fin d'horizon`,
+            message: `${subsCount} membres × ${cap.avgSessionsPerMonth} sessions = ${Math.round(sessionsDemand)} sessions/mois demandées vs ${Math.round(sessionsSupply)} offertes (${cap.parallelClasses} cours × ${cap.capacityPerClass} pers × ${monthlyCoachHours.toFixed(0)}h coaching).`,
+            hint: "Augmente parallelClasses, capacityPerClass, ou les heures freelance pools.",
+            link: { href: "/capacity", label: "Voir capacité" },
+          });
+        }
+      } else {
+        // Heuristique fallback (12h/membre/mois)
+        const hoursDemanded = subsCount * 12;
+        const cadreCoachItems = p.salaries.items.filter((it) =>
+          /coach|head/i.test(it.role)
+        );
+        const cadreHours = cadreCoachItems.reduce((s, it) => s + it.fte * 130, 0);
+        const totalHoursAvailable = monthlyCoachHours + cadreHours;
+        if (totalHoursAvailable > 0 && hoursDemanded > totalHoursAvailable * 0.95) {
+          issues.push({
+            id: "capacity",
+            severity: hoursDemanded > totalHoursAvailable ? "critical" : "warning",
+            title: "Capacité coaching saturée (heuristique)",
+            message: `${subsCount} membres → ~${hoursDemanded}h/mois de demande vs ${totalHoursAvailable.toFixed(0)}h offertes.`,
+            hint: "Active la capacité paramétrée sur /capacity pour un calcul précis.",
+            link: { href: "/capacity", label: "Voir capacité" },
+          });
+        }
       }
     }
 
