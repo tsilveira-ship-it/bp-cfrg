@@ -9,6 +9,8 @@ import {
   MonthlyTotalCostLine,
 } from "@/components/charts";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
+import { LineWithAnalysis } from "@/components/line-with-analysis";
+import { SynthesisCard } from "@/components/synthesis-card";
 import {
   Table,
   TableBody,
@@ -70,6 +72,8 @@ export default function CostsPage() {
         </div>
         <ScenarioSwitcher />
       </header>
+
+      <SynthesisCard />
 
       <Tabs defaultValue="monthly" className="space-y-4">
         <TabsList>
@@ -213,7 +217,9 @@ export default function CostsPage() {
                       { label: "Ponctuels (SACEM, etc.)", k: "oneOff" as const },
                     ].map((row) => (
                       <TableRow key={row.k}>
-                        <TableCell className="font-medium">{row.label}</TableCell>
+                        <TableCell className="font-medium">
+                          <LineWithAnalysis label={row.label} />
+                        </TableCell>
                         {result.yearly.map((y, i) => (
                           <TableCell key={i} className="text-right">
                             {fmtCurrency(y[row.k], { compact: true })}

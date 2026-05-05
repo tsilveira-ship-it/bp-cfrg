@@ -5,6 +5,8 @@ import { computeModel } from "@/lib/model/compute";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CashFlowChart } from "@/components/charts";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
+import { LineWithAnalysis } from "@/components/line-with-analysis";
+import { SynthesisCard } from "@/components/synthesis-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fmtCurrency } from "@/lib/format";
 
@@ -26,6 +28,8 @@ export default function CashflowPage() {
         </div>
         <ScenarioSwitcher />
       </header>
+
+      <SynthesisCard />
 
       <Card>
         <CardHeader>
@@ -52,10 +56,18 @@ export default function CashflowPage() {
             </TableHeader>
             <TableBody>
               <TableRow className="font-semibold bg-muted/40">
-                <TableCell>EBITDA</TableCell>
+                <TableCell><LineWithAnalysis label="EBITDA" /></TableCell>
                 {result.yearly.map((y, i) => (
                   <TableCell key={i} className={"text-right " + (y.ebitda >= 0 ? "text-emerald-700" : "text-red-700")}>
                     {fmtCurrency(y.ebitda, { compact: true })}
+                  </TableCell>
+                ))}
+              </TableRow>
+              <TableRow>
+                <TableCell className="text-muted-foreground"><LineWithAnalysis label="D&A" /> (info, non-cash)</TableCell>
+                {result.yearly.map((y, i) => (
+                  <TableCell key={i} className="text-right text-muted-foreground">
+                    {y.da > 0 ? `(${fmtCurrency(y.da, { compact: true }).replace("-", "")})` : "—"}
                   </TableCell>
                 ))}
               </TableRow>
@@ -66,7 +78,7 @@ export default function CashflowPage() {
                 ))}
               </TableRow>
               <TableRow className="font-semibold">
-                <TableCell>Cash Flow Opérationnel (CFO)</TableCell>
+                <TableCell><LineWithAnalysis label="Cash Flow Opérationnel (CFO)" /></TableCell>
                 {result.yearly.map((y, i) => (
                   <TableCell key={i} className="text-right">{fmtCurrency(y.cfo, { compact: true })}</TableCell>
                 ))}
@@ -78,19 +90,19 @@ export default function CashflowPage() {
                 ))}
               </TableRow>
               <TableRow className="font-semibold">
-                <TableCell>Cash Flow Investissement (CFI)</TableCell>
+                <TableCell><LineWithAnalysis label="Cash Flow Investissement (CFI)" /></TableCell>
                 {result.yearly.map((y, i) => (
                   <TableCell key={i} className="text-right">{fmtCurrency(y.cfi, { compact: true })}</TableCell>
                 ))}
               </TableRow>
               <TableRow className="font-semibold">
-                <TableCell>Cash Flow Financement (CFF)</TableCell>
+                <TableCell><LineWithAnalysis label="Cash Flow Financement (CFF)" /></TableCell>
                 {result.yearly.map((y, i) => (
                   <TableCell key={i} className="text-right">{fmtCurrency(y.cff, { compact: true })}</TableCell>
                 ))}
               </TableRow>
               <TableRow className="font-bold border-t-2 bg-muted/40">
-                <TableCell>Variation de trésorerie</TableCell>
+                <TableCell><LineWithAnalysis label="Variation de trésorerie" /></TableCell>
                 {result.yearly.map((y, i) => (
                   <TableCell key={i} className={"text-right " + (y.netCashFlow >= 0 ? "text-emerald-700" : "text-red-700")}>
                     {fmtCurrency(y.netCashFlow, { compact: true })}
@@ -98,7 +110,7 @@ export default function CashflowPage() {
                 ))}
               </TableRow>
               <TableRow className="font-bold bg-muted/20">
-                <TableCell>Trésorerie fin d&apos;exercice</TableCell>
+                <TableCell><LineWithAnalysis label="Trésorerie fin d'exercice" /></TableCell>
                 {result.yearly.map((y, i) => (
                   <TableCell key={i} className={"text-right " + (y.cashEnd < 0 ? "text-red-700" : "")}>
                     {fmtCurrency(y.cashEnd, { compact: true })}

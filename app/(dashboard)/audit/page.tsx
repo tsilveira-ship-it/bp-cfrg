@@ -6,6 +6,7 @@ import { DEFAULT_PARAMS } from "@/lib/model/defaults";
 import type { ModelParams } from "@/lib/model/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
+import { SynthesisCard } from "@/components/synthesis-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -325,6 +326,8 @@ export default function AuditPage() {
         </div>
         <ScenarioSwitcher />
       </header>
+
+      <SynthesisCard />
 
       <Tabs defaultValue="savings" className="space-y-4">
         <TabsList>

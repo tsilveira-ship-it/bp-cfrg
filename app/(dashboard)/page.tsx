@@ -12,6 +12,7 @@ import {
   CostBreakdownChart,
 } from "@/components/charts";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
+import { SynthesisCard } from "@/components/synthesis-card";
 import { fmtCurrency, fmtPct } from "@/lib/format";
 import {
   TrendingUp,
@@ -74,6 +75,8 @@ export default function DashboardPage() {
         </div>
         <ScenarioSwitcher />
       </header>
+
+      <SynthesisCard />
 
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard

@@ -287,7 +287,11 @@ export function computeModel(p: ModelParams): ModelResult {
   );
 
   const totalCapex = p.capex.equipment + p.capex.travaux + p.capex.juridique + p.capex.depots;
-  const monthlyDA = p.tax.enableDA ? totalCapex / (p.tax.daYears * 12) : 0;
+  const yEquip = p.tax.amortYearsEquipment ?? p.tax.daYears ?? 5;
+  const yTrav = p.tax.amortYearsTravaux ?? Math.max(p.tax.daYears ?? 10, 10);
+  const monthlyDA = p.tax.enableDA
+    ? p.capex.equipment / Math.max(1, yEquip * 12) + p.capex.travaux / Math.max(1, yTrav * 12)
+    : 0;
 
   const finFlows = computeFinanceFlows(p, H);
 

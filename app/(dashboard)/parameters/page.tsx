@@ -614,10 +614,42 @@ export default function ParametersPage() {
                 onCheckedChange={(v) => patch("tax.enableDA", v)}
               />
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <ParamNumber path="tax.isRate" label="Taux IS" value={params.tax.isRate} unit="%" step={0.5} />
-              <ParamNumber path="tax.daYears" label="Durée amortissement" value={params.tax.daYears} unit="mois" hint="En années" />
-              <ParamNumber path="bfr.daysOfRevenue" label="BFR (jours de CA)" value={params.bfr.daysOfRevenue} hint="Décalage encaissements/décaissements" />
+              <ParamNumber
+                path="tax.amortYearsEquipment"
+                label="Amort. équipement (années)"
+                value={params.tax.amortYearsEquipment ?? 5}
+                hint={`CAPEX équipement: ${params.capex.equipment.toLocaleString("fr-FR")}€`}
+              />
+              <ParamNumber
+                path="tax.amortYearsTravaux"
+                label="Amort. travaux (années)"
+                value={params.tax.amortYearsTravaux ?? 10}
+                hint={`CAPEX travaux: ${params.capex.travaux.toLocaleString("fr-FR")}€`}
+              />
+              <ParamNumber path="bfr.daysOfRevenue" label="BFR (jours de CA)" value={params.bfr.daysOfRevenue} />
+            </div>
+            <div className="text-xs text-muted-foreground p-3 border rounded bg-muted/20">
+              D&A mensuelle estimée:{" "}
+              <span className="font-mono font-semibold text-foreground">
+                {fmtCurrency(
+                  params.tax.enableDA
+                    ? params.capex.equipment / Math.max(1, (params.tax.amortYearsEquipment ?? 5) * 12)
+                      + params.capex.travaux / Math.max(1, (params.tax.amortYearsTravaux ?? 10) * 12)
+                    : 0
+                )}
+              </span>{" "}
+              · Annuelle:{" "}
+              <span className="font-mono font-semibold text-foreground">
+                {fmtCurrency(
+                  params.tax.enableDA
+                    ? params.capex.equipment / Math.max(1, params.tax.amortYearsEquipment ?? 5)
+                      + params.capex.travaux / Math.max(1, params.tax.amortYearsTravaux ?? 10)
+                    : 0
+                )}
+              </span>
+              {" "}· Juridique + dépôts ({fmtCurrency(params.capex.juridique + params.capex.depots)}) non amortissables.
             </div>
           </AccordionContent>
         </AccordionItem>

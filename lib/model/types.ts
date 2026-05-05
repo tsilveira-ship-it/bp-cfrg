@@ -247,7 +247,9 @@ export type ModelParams = {
     isRate: number;
     enableIs: boolean;
     enableDA: boolean;
-    daYears: number;
+    daYears: number;                  // legacy fallback
+    amortYearsEquipment?: number;     // default 5
+    amortYearsTravaux?: number;       // default 10
   };
 
   bfr: { daysOfRevenue: number };

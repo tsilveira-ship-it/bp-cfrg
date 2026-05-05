@@ -139,6 +139,8 @@ export const DEFAULT_PARAMS: ModelParams = {
     enableIs: false,
     enableDA: false,
     daYears: 5,
+    amortYearsEquipment: 5,
+    amortYearsTravaux: 10,
   },
 
   bfr: { daysOfRevenue: 0 },
