@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
 import { SynthesisCard } from "@/components/synthesis-card";
 import { CollapseToggle, ExpandAllButton } from "@/components/collapse-toggle";
+import { ExcelExportButton } from "@/components/excel-export-button";
 import { useExpand } from "@/lib/use-expand";
 import {
   Table,
@@ -135,7 +136,10 @@ export default function BalanceSheetPage() {
             Bilan prévisionnel simplifié + plan de financement initial
           </p>
         </div>
-        <ScenarioSwitcher />
+        <div className="flex items-center gap-2">
+          <ExcelExportButton />
+          <ScenarioSwitcher />
+        </div>
       </header>
 
       <SynthesisCard />

@@ -13,7 +13,8 @@ import {
 import Link from "next/link";
 import { fmtCurrency, fmtPct, fmtNum } from "@/lib/format";
 import { effectiveMonthlyHours } from "@/lib/model/types";
-import { Pencil, ExternalLink, MessageSquareText } from "lucide-react";
+import { Pencil, ExternalLink, MessageSquareText, Star, ToggleLeft, MessageSquare } from "lucide-react";
+import { topKeyHypotheses, activeToggles } from "@/lib/key-hypotheses";
 
 type AssumptionRow = {
   category: string;
@@ -275,6 +276,115 @@ export default function AssumptionsPage() {
         </div>
         <ScenarioSwitcher />
       </header>
+
+      {(() => {
+        const top = topKeyHypotheses(params, 10);
+        return (
+          <Card className="border-[#D32F2F]/40">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Star className="h-4 w-4 text-[#D32F2F]" /> Top 10 hypothèses critiques
+                <span className="text-xs text-muted-foreground font-normal">
+                  (les chiffres qui pèsent le plus dans le BP)
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-8">#</TableHead>
+                    <TableHead>Catégorie</TableHead>
+                    <TableHead>Hypothèse</TableHead>
+                    <TableHead className="text-right">Valeur</TableHead>
+                    <TableHead>Source / contexte</TableHead>
+                    <TableHead className="text-right">Note</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {top.map((h) => (
+                    <TableRow key={h.rank}>
+                      <TableCell className="font-bold text-[#D32F2F]">{h.rank}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{h.category}</TableCell>
+                      <TableCell className="font-medium text-sm">
+                        {h.label}
+                        <div className="text-[10px] font-mono text-muted-foreground/70 mt-0.5">
+                          {h.paths.slice(0, 2).join(" · ")}
+                          {h.paths.length > 2 && ` +${h.paths.length - 2}`}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-mono font-semibold">
+                        {h.value}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground italic max-w-md">
+                        {h.rationale}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {h.noteKey ? (
+                          <span title={params.fieldNotes?.[h.noteKey]?.note}>
+                            <MessageSquare className="h-4 w-4 text-amber-600 inline" />
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/40">—</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <p className="text-[11px] text-muted-foreground mt-3">
+                Cliquer dans Configuration → Paramètres pour éditer. Ajouter une note via l&apos;icône
+                + au survol d&apos;un champ pour documenter la source.
+              </p>
+            </CardContent>
+          </Card>
+        );
+      })()}
+
+      {(() => {
+        const toggles = activeToggles(params);
+        const onCount = toggles.filter((t) => t.on).length;
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ToggleLeft className="h-4 w-4" /> Configuration du modèle ({onCount}/{toggles.length} activés)
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Toggles modèle qui affectent les calculs. Tout investisseur doit savoir lesquels sont activés.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {toggles.map((t) => (
+                  <div
+                    key={t.key}
+                    className={
+                      "flex items-center gap-2 p-2 rounded border text-xs " +
+                      (t.on
+                        ? "bg-emerald-50/40 border-emerald-300"
+                        : "bg-muted/20 border-muted text-muted-foreground")
+                    }
+                  >
+                    <div
+                      className={
+                        "h-2 w-2 rounded-full " + (t.on ? "bg-emerald-500" : "bg-muted-foreground/40")
+                      }
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium">{t.label}</div>
+                      {t.hint && <div className="text-[10px] text-muted-foreground">{t.hint}</div>}
+                    </div>
+                    <span className="text-[10px] uppercase tracking-wider font-mono">
+                      {t.on ? "ON" : "OFF"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {(() => {
         const fieldNotes = params.fieldNotes ?? {};

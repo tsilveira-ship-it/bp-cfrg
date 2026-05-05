@@ -15,6 +15,7 @@ import { ScenarioSwitcher } from "@/components/scenario-switcher";
 import { LineWithAnalysis } from "@/components/line-with-analysis";
 import { SynthesisCard } from "@/components/synthesis-card";
 import { CollapseToggle, ExpandAllButton } from "@/components/collapse-toggle";
+import { ExcelExportButton } from "@/components/excel-export-button";
 import { useExpand } from "@/lib/use-expand";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fmtCurrency } from "@/lib/format";
@@ -77,7 +78,10 @@ export default function CashflowPage() {
           <h1 className="text-3xl font-bold tracking-tight">Trésorerie</h1>
           <p className="text-muted-foreground text-sm mt-1">Flux de trésorerie consolidé et solde mensuel</p>
         </div>
-        <ScenarioSwitcher />
+        <div className="flex items-center gap-2">
+          <ExcelExportButton />
+          <ScenarioSwitcher />
+        </div>
       </header>
 
       <SynthesisCard />
