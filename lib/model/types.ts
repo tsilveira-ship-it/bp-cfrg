@@ -22,6 +22,27 @@ export function buildTimeline(startYear: number, horizonYears: number) {
 // Legacy export kept for components that did not migrate yet
 export const FY_LABELS_LEGACY = ["FY25", "FY26", "FY27", "FY28", "FY29"] as const;
 
+export type ShareholderType = "founder" | "investor" | "employee" | "advisor" | "pool";
+
+export type Shareholder = {
+  id: string;
+  name: string;
+  type: ShareholderType;
+  shares: number;
+  notes?: string;
+};
+
+/** Événement de dilution (levée future, option pool, etc.) — appliqué si active=true. */
+export type DilutionEvent = {
+  id: string;
+  name: string;
+  newSharesIssued: number;
+  pricePerShare?: number;     // valorisation €/part (post-money implicite)
+  beneficiary?: string;       // nom de l'actionnaire qui reçoit (créé si inexistant)
+  beneficiaryType?: ShareholderType;
+  active: boolean;
+};
+
 export type CapexItem = {
   id: string;
   name: string;
@@ -313,6 +334,12 @@ export type ModelParams = {
     daysReceivables?: number;         // créances clients (Square: 3j typique)
     daysSupplierPayables?: number;    // dettes fournisseurs (30j typique)
     daysStock?: number;               // stock (0 typique en service)
+  };
+
+  /** Cap table actionnariat (#15) — actionnaires + événements dilution simulés. */
+  capTable?: {
+    shareholders: Shareholder[];
+    events: DilutionEvent[];
   };
 
   /** Capacité opérationnelle (cours en parallèle, capacité par cours, fréquence membres). */

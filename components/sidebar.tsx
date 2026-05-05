@@ -29,6 +29,9 @@ import {
   CalendarDays,
   FileJson,
   Send,
+  PieChart,
+  Sparkles,
+  GitBranch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "@/components/user-menu";
@@ -61,6 +64,9 @@ const GROUPS: Group[] = [
     title: "Analyse",
     items: [
       { href: "/investor", label: "Investisseur", icon: Briefcase },
+      { href: "/cap-table", label: "Cap table", icon: PieChart },
+      { href: "/financial-highlights", label: "Synthèse 1-page", icon: Sparkles },
+      { href: "/use-of-funds", label: "Use of funds", icon: GitBranch },
       { href: "/sensitivity", label: "Sensibilité", icon: TrendingDown },
       { href: "/waterfalls", label: "Waterfall charts", icon: Waves },
       { href: "/capacity", label: "Capacité", icon: Activity },
