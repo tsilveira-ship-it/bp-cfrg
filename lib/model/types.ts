@@ -314,6 +314,16 @@ export type ModelParams = {
     daysSupplierPayables?: number;    // dettes fournisseurs (30j typique)
     daysStock?: number;               // stock (0 typique en service)
   };
+
+  /** Capacité opérationnelle (cours en parallèle, capacité par cours, fréquence membres). */
+  capacity?: {
+    parallelClasses: number;          // nb de cours simultanés par créneau (ex 2)
+    capacityPerClass: number;         // capacité moyenne par cours (ex 14)
+    capacityPerClassMin?: number;     // borne basse (ex 12)
+    capacityPerClassMax?: number;     // borne haute (ex 16)
+    avgSessionsPerMonth: number;      // sessions/membre/mois moyennes (ex 8)
+  };
+
   openingCash: number;
 };
 
