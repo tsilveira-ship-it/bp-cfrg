@@ -51,6 +51,29 @@ export type CapexItem = {
   amortYears: number;     // 0 = non amorti
 };
 
+/** Espace d'entraînement (ex Espace A 14 places, Espace B 12 places). */
+export type GymArea = {
+  id: string;
+  name: string;
+  capacity: number;       // nb membres simultanés dans cet espace
+};
+
+/** Planning hebdomadaire de base (à scaler par FY). */
+export type WeeklySchedule = {
+  weekdayClassesPerArea: number;   // cours par jour ouvré dans chaque espace (ex 5)
+  weekendClassesPerArea: number;   // cours par jour weekend dans chaque espace (ex 3)
+  hoursPerClass: number;            // durée d'un cours en heures (ex 1)
+};
+
+/** Allocation d'heures à un coach (cadre ou pool freelance) sur un FY. */
+export type CoachAllocation = {
+  id: string;
+  fy: number;                        // FY index (0 = première année)
+  coachKind: "cadre" | "freelance";
+  coachId: string;                   // référence à salaries.items[].id ou freelancePools[].id
+  hoursPerMonth: number;             // heures allouées / mois
+};
+
 /** Q&A inline par champ — thread de commentaires entre fondateur et analyste/investisseur. */
 export type FieldComment = {
   id: string;
@@ -363,6 +386,11 @@ export type ModelParams = {
     capacityPerClassMin?: number;     // borne basse (ex 12)
     capacityPerClassMax?: number;     // borne haute (ex 16)
     avgSessionsPerMonth: number;      // sessions/membre/mois moyennes (ex 8)
+    // Planificateur détaillé (optionnel — utilisé par /capacity-planner)
+    areas?: GymArea[];                // espaces d'entraînement avec capacité propre
+    weeklySchedule?: WeeklySchedule;  // nb cours/jour × type de jour × durée
+    scaleByFy?: number[];             // multiplicateur du planning par FY (length = horizonYears)
+    coachAllocations?: CoachAllocation[]; // heures allouées par cadre/pool (par FY)
   };
 
   openingCash: number;

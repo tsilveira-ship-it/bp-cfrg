@@ -77,6 +77,7 @@ const GROUPS: Group[] = [
       { href: "/sensitivity", label: "Sensibilité", icon: TrendingDown },
       { href: "/waterfalls", label: "Waterfall charts", icon: Waves },
       { href: "/capacity", label: "Capacité", icon: Activity },
+      { href: "/capacity-planner", label: "Capacity planner", icon: CalendarDays },
       { href: "/audit", label: "Audit & risques", icon: ShieldAlert },
       { href: "/audit-pack", label: "Audit pack", icon: ShieldCheck },
       { href: "/health-check", label: "Health check", icon: HeartPulse },
