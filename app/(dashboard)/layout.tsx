@@ -2,6 +2,7 @@ import { Sidebar } from "@/components/sidebar";
 import { ActiveScenarioLoader } from "@/components/active-scenario-loader";
 import { AutoSaver } from "@/components/auto-saver";
 import { HealthBanner } from "@/components/health-banner";
+import { OnboardingWizard } from "@/components/onboarding-wizard";
 import { getMyRole } from "@/app/actions/access";
 
 export default async function DashboardLayout({
@@ -25,6 +26,7 @@ export default async function DashboardLayout({
       </main>
       <ActiveScenarioLoader />
       <AutoSaver />
+      <OnboardingWizard />
     </div>
   );
 }

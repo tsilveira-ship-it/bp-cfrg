@@ -25,6 +25,10 @@ import {
   HeartPulse,
   Waves,
   GitCompareArrows,
+  Dices,
+  CalendarDays,
+  FileJson,
+  Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "@/components/user-menu";
@@ -39,6 +43,7 @@ const GROUPS: Group[] = [
       { href: "/", label: "Dashboard", icon: BarChart3 },
       { href: "/pnl", label: "Compte de résultat", icon: FileSpreadsheet },
       { href: "/cashflow", label: "Trésorerie", icon: Wallet },
+      { href: "/plan-quinzaines", label: "Plan an1 (quinzaines)", icon: CalendarDays },
       { href: "/balance-sheet", label: "Bilan", icon: Scale },
       { href: "/monthly", label: "Vue mensuelle", icon: CalendarRange },
     ],
@@ -62,6 +67,7 @@ const GROUPS: Group[] = [
       { href: "/audit", label: "Audit & risques", icon: ShieldAlert },
       { href: "/health-check", label: "Health check", icon: HeartPulse },
       { href: "/variance", label: "Variance (réel/prévu)", icon: GitCompareArrows },
+      { href: "/monte-carlo", label: "Monte Carlo", icon: Dices },
     ],
   },
   {
@@ -71,6 +77,8 @@ const GROUPS: Group[] = [
       { href: "/assumptions", label: "Hypothèses", icon: ListChecks },
       { href: "/scenarios", label: "Mes scénarios", icon: FolderOpen },
       { href: "/master-history", label: "Historique masters", icon: History },
+      { href: "/share", label: "Partager (lien investisseur)", icon: Send },
+      { href: "/backup", label: "Backup JSON", icon: FileJson },
       { href: "/print", label: "Export PDF", icon: Printer },
     ],
   },
