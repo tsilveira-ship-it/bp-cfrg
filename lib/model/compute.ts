@@ -1,6 +1,7 @@
 import {
   buildTimeline,
   effectiveMonthlyHours,
+  expandCapex,
   monthlyEmployerCost,
   type BondIssue,
   type LoanLine,
@@ -295,11 +296,13 @@ export function computeModel(p: ModelParams): ModelResult {
     sal[i] + rent[i] + recEntretien[i] + recFraisOp[i] + mkt[i] + prov[i] + oneOff[i]
   );
 
-  const totalCapex = p.capex.equipment + p.capex.travaux + p.capex.juridique + p.capex.depots;
-  const yEquip = p.tax.amortYearsEquipment ?? p.tax.daYears ?? 5;
-  const yTrav = p.tax.amortYearsTravaux ?? Math.max(p.tax.daYears ?? 10, 10);
+  const capexItems = expandCapex(p);
+  const totalCapex = capexItems.reduce((s, it) => s + it.amount, 0);
   const monthlyDA = p.tax.enableDA
-    ? p.capex.equipment / Math.max(1, yEquip * 12) + p.capex.travaux / Math.max(1, yTrav * 12)
+    ? capexItems.reduce(
+        (s, it) => s + (it.amortYears > 0 ? it.amount / Math.max(1, it.amortYears * 12) : 0),
+        0
+      )
     : 0;
 
   const finFlows = computeFinanceFlows(p, H);

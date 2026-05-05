@@ -14,10 +14,12 @@ import {
 } from "@/components/ui/accordion";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
 import { SubsEvolutionEditor } from "@/components/subs-evolution-editor";
+import { CapexItemsEditor } from "@/components/capex-items-editor";
 import { SectionHeader } from "@/components/section-header";
 import { StartMonthPicker } from "@/components/start-month-picker";
 import { Trash2, Plus } from "lucide-react";
 import { fmtPct, fmtCurrency } from "@/lib/format";
+import { expandCapex } from "@/lib/model/types";
 
 export default function ParametersPage() {
   const params = useModelStore((s) => s.params);
@@ -568,21 +570,26 @@ export default function ParametersPage() {
           <AccordionTrigger className="px-6 hover:no-underline">
             <div className="font-semibold text-left">CAPEX & investissement initial</div>
           </AccordionTrigger>
-          <AccordionContent className="px-6 pb-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <ParamNumber path="capex.equipment" label="Équipement" value={params.capex.equipment} unit="€" />
-              <ParamNumber path="capex.travaux" label="Travaux" value={params.capex.travaux} unit="€" />
-              <ParamNumber path="capex.juridique" label="Juridique" value={params.capex.juridique} unit="€" />
-              <ParamNumber path="capex.depots" label="Dépôts garantie" value={params.capex.depots} unit="€" />
-            </div>
-            <div className="mt-3 text-xs text-muted-foreground">
-              Total CAPEX:{" "}
-              <span className="font-semibold text-foreground">
-                {fmtCurrency(
-                  params.capex.equipment + params.capex.travaux + params.capex.juridique + params.capex.depots
-                )}
-              </span>
-            </div>
+          <AccordionContent className="px-6 pb-6 space-y-4">
+            {!params.capexItems && (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <ParamNumber path="capex.equipment" label="Équipement" value={params.capex.equipment} unit="€" />
+                  <ParamNumber path="capex.travaux" label="Travaux" value={params.capex.travaux} unit="€" />
+                  <ParamNumber path="capex.juridique" label="Juridique" value={params.capex.juridique} unit="€" />
+                  <ParamNumber path="capex.depots" label="Dépôts garantie" value={params.capex.depots} unit="€" />
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Total CAPEX:{" "}
+                  <span className="font-semibold text-foreground">
+                    {fmtCurrency(
+                      params.capex.equipment + params.capex.travaux + params.capex.juridique + params.capex.depots
+                    )}
+                  </span>
+                </div>
+              </>
+            )}
+            <CapexItemsEditor />
           </AccordionContent>
         </AccordionItem>
 
@@ -657,27 +664,38 @@ export default function ParametersPage() {
               />
               <ParamNumber path="bfr.daysOfRevenue" label="BFR (jours de CA)" value={params.bfr.daysOfRevenue} />
             </div>
-            <div className="text-xs text-muted-foreground p-3 border rounded bg-muted/20">
-              D&A mensuelle estimée:{" "}
-              <span className="font-mono font-semibold text-foreground">
-                {fmtCurrency(
-                  params.tax.enableDA
-                    ? params.capex.equipment / Math.max(1, (params.tax.amortYearsEquipment ?? 5) * 12)
-                      + params.capex.travaux / Math.max(1, (params.tax.amortYearsTravaux ?? 10) * 12)
-                    : 0
-                )}
-              </span>{" "}
-              · Annuelle:{" "}
-              <span className="font-mono font-semibold text-foreground">
-                {fmtCurrency(
-                  params.tax.enableDA
-                    ? params.capex.equipment / Math.max(1, params.tax.amortYearsEquipment ?? 5)
-                      + params.capex.travaux / Math.max(1, params.tax.amortYearsTravaux ?? 10)
-                    : 0
-                )}
-              </span>
-              {" "}· Juridique + dépôts ({fmtCurrency(params.capex.juridique + params.capex.depots)}) non amortissables.
-            </div>
+            {(() => {
+              const items = expandCapex(params);
+              const monthly = params.tax.enableDA
+                ? items.reduce(
+                    (s, it) =>
+                      s + (it.amortYears > 0 ? it.amount / Math.max(1, it.amortYears * 12) : 0),
+                    0
+                  )
+                : 0;
+              const annual = monthly * 12;
+              const nonAmort = items
+                .filter((it) => it.amortYears <= 0)
+                .reduce((s, it) => s + it.amount, 0);
+              return (
+                <div className="text-xs text-muted-foreground p-3 border rounded bg-muted/20">
+                  D&A mensuelle estimée:{" "}
+                  <span className="font-mono font-semibold text-foreground">{fmtCurrency(monthly)}</span>{" "}
+                  · Annuelle:{" "}
+                  <span className="font-mono font-semibold text-foreground">{fmtCurrency(annual)}</span>
+                  {nonAmort > 0 && (
+                    <>
+                      {" "}· Postes non amortissables ({fmtCurrency(nonAmort)}):{" "}
+                      {items
+                        .filter((it) => it.amortYears <= 0 && it.amount > 0)
+                        .map((it) => it.name)
+                        .join(", ")}
+                      .
+                    </>
+                  )}
+                </div>
+              );
+            })()}
           </AccordionContent>
         </AccordionItem>
 

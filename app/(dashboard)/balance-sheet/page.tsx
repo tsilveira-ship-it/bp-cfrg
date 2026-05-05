@@ -3,6 +3,7 @@ import { Fragment, useMemo } from "react";
 import { useModelStore } from "@/lib/store";
 import { computeModel } from "@/lib/model/compute";
 import { capexBreakdown, principalRepayBreakdown } from "@/lib/model/breakdowns";
+import { expandCapex } from "@/lib/model/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
 import { SynthesisCard } from "@/components/synthesis-card";
@@ -30,19 +31,24 @@ export default function BalanceSheetPage() {
   const capexDetail = useMemo(() => capexBreakdown(params), [params]);
   const principalDetail = useMemo(() => principalRepayBreakdown(params), [params]);
 
-  const totalCapex = params.capex.equipment + params.capex.travaux + params.capex.juridique + params.capex.depots;
+  const capexItems = expandCapex(params);
+  const totalCapex = capexItems.reduce((s, it) => s + it.amount, 0);
 
   const bilan = result.yearly.map((y, fy) => {
     const monthsToEnd = (fy + 1) * 12;
-    const yEquip = params.tax.amortYearsEquipment ?? params.tax.daYears ?? 5;
-    const yTrav = params.tax.amortYearsTravaux ?? 10;
-    const cumAmortEquip = params.tax.enableDA
-      ? Math.min(params.capex.equipment, (params.capex.equipment / Math.max(1, yEquip * 12)) * monthsToEnd)
-      : 0;
-    const cumAmortTrav = params.tax.enableDA
-      ? Math.min(params.capex.travaux, (params.capex.travaux / Math.max(1, yTrav * 12)) * monthsToEnd)
-      : 0;
-    const cumAmort = cumAmortEquip + cumAmortTrav;
+    let cumAmort = 0;
+    let cumAmortEquip = 0;
+    let cumAmortTrav = 0;
+    if (params.tax.enableDA) {
+      for (const it of capexItems) {
+        if (it.amortYears <= 0 || it.amount <= 0) continue;
+        const monthlyAmort = it.amount / Math.max(1, it.amortYears * 12);
+        const cum = Math.min(it.amount, monthlyAmort * monthsToEnd);
+        cumAmort += cum;
+        if (it.category === "equipment") cumAmortEquip += cum;
+        else if (it.category === "travaux") cumAmortTrav += cum;
+      }
+    }
 
     const immoBrute = totalCapex;
     const immoNette = immoBrute - cumAmort;
@@ -150,30 +156,21 @@ export default function BalanceSheetPage() {
               <CardContent>
                 <Table>
                   <TableBody>
-                    <TableRow>
-                      <TableCell>Équipement (mobilier, racks, machines)</TableCell>
-                      <TableCell className="text-right font-mono">
-                        {fmtCurrency(params.capex.equipment)}
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell>Travaux & aménagement</TableCell>
-                      <TableCell className="text-right font-mono">
-                        {fmtCurrency(params.capex.travaux)}
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell>Juridique & frais création</TableCell>
-                      <TableCell className="text-right font-mono">
-                        {fmtCurrency(params.capex.juridique)}
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell>Dépôts de garantie</TableCell>
-                      <TableCell className="text-right font-mono">
-                        {fmtCurrency(params.capex.depots)}
-                      </TableCell>
-                    </TableRow>
+                    {capexItems.map((it) => (
+                      <TableRow key={it.id}>
+                        <TableCell>
+                          {it.name}
+                          {it.amortYears > 0 && (
+                            <span className="text-xs text-muted-foreground ml-2">
+                              ({it.amortYears}y amort)
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {fmtCurrency(it.amount)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
                     <TableRow className="font-semibold border-t-2">
                       <TableCell>Sous-total CAPEX</TableCell>
                       <TableCell className="text-right font-mono">

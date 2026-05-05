@@ -13,7 +13,7 @@ import {
 import Link from "next/link";
 import { fmtCurrency, fmtPct, fmtNum } from "@/lib/format";
 import { effectiveMonthlyHours } from "@/lib/model/types";
-import { Pencil, ExternalLink } from "lucide-react";
+import { Pencil, ExternalLink, MessageSquareText } from "lucide-react";
 
 type AssumptionRow = {
   category: string;
@@ -275,6 +275,64 @@ export default function AssumptionsPage() {
         </div>
         <ScenarioSwitcher />
       </header>
+
+      {(() => {
+        const fieldNotes = params.fieldNotes ?? {};
+        const entries = Object.entries(fieldNotes).sort((a, b) =>
+          (b[1].date ?? "").localeCompare(a[1].date ?? "")
+        );
+        if (entries.length === 0) return null;
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <MessageSquareText className="h-4 w-4 text-amber-600" /> Notes par champ
+                <span className="text-xs text-muted-foreground font-normal">
+                  ({entries.length})
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Champ (path)</TableHead>
+                    <TableHead>Note</TableHead>
+                    <TableHead>Auteur</TableHead>
+                    <TableHead>Édité le</TableHead>
+                    <TableHead className="text-right">Modifier</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {entries.map(([path, note]) => (
+                    <TableRow key={path}>
+                      <TableCell className="font-mono text-xs">{path}</TableCell>
+                      <TableCell className="text-xs whitespace-pre-wrap max-w-md">
+                        {note.note}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {note.author ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {note.date ? new Date(note.date).toLocaleDateString("fr-FR") : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Link
+                          href="/parameters"
+                          className="inline-flex items-center gap-1 text-xs text-[#D32F2F] hover:underline"
+                        >
+                          <Pencil className="h-3 w-3" />
+                          /parameters
+                        </Link>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {Object.entries(grouped).map(([cat, items]) => (
         <Card key={cat}>
