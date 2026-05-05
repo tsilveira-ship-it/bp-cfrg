@@ -10,8 +10,10 @@ import {
   Sliders,
   ShieldAlert,
   CalendarRange,
+  FolderOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { UserMenu } from "@/components/user-menu";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: BarChart3 },
@@ -20,6 +22,7 @@ const NAV = [
   { href: "/cashflow", label: "Trésorerie", icon: Wallet },
   { href: "/monthly", label: "Vue mensuelle", icon: CalendarRange },
   { href: "/parameters", label: "Paramètres", icon: Sliders },
+  { href: "/scenarios", label: "Mes scénarios", icon: FolderOpen },
   { href: "/audit", label: "Audit & risques", icon: ShieldAlert },
 ];
 
@@ -69,7 +72,10 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <div className="p-4 text-[10px] text-sidebar-foreground/50 border-t border-sidebar-border">
+      <div className="border-t border-sidebar-border py-3">
+        <UserMenu />
+      </div>
+      <div className="px-4 pb-3 text-[10px] text-sidebar-foreground/40">
         v260505 — Prévi_gestion
       </div>
     </aside>

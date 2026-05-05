@@ -3,6 +3,7 @@ import { Montserrat, Oswald, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
 import { Toaster } from "@/components/ui/sonner";
+import { ActiveScenarioLoader } from "@/components/active-scenario-loader";
 
 const montserrat = Montserrat({
   variable: "--font-montserrat",
@@ -47,6 +48,7 @@ export default function RootLayout({
             <div className="mx-auto w-full max-w-[1600px] p-6 lg:p-10">{children}</div>
           </main>
         </div>
+        <ActiveScenarioLoader />
         <Toaster />
       </body>
     </html>
