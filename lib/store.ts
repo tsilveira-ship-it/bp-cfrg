@@ -7,6 +7,7 @@ import {
   type FieldComment,
   type FieldNote,
   type FieldQA,
+  type FieldValidation,
   type ModelParams,
 } from "./model/types";
 
@@ -28,6 +29,8 @@ type Store = {
   addFieldComment: (path: string, text: string, author?: string) => void;
   removeFieldComment: (path: string, commentId: string) => void;
   toggleCommentResolved: (path: string, commentId: string) => void;
+  validateField: (path: string, value: unknown, admin: string) => void;
+  unvalidateField: (path: string, level: 1 | 2) => void;
   applyScenario: (s: ScenarioName) => void;
   setLoaded: (l: LoadedRef) => void;
   loadParams: (params: ModelParams, ref: LoadedRef) => void;
@@ -122,6 +125,57 @@ export const useModelStore = create<Store>()(
           );
           return {
             params: { ...s.params, fieldQA: { ...qa, [path]: { comments: updated } } },
+            scenario: "custom",
+          };
+        }),
+      validateField: (path, value, admin) =>
+        set((s) => {
+          const cur: Record<string, FieldValidation> = { ...(s.params.fieldValidations ?? {}) };
+          const existing = cur[path] ?? {};
+          const stamp = { admin, date: new Date().toISOString(), value };
+          // Si pas de level1 → set level1
+          // Si level1 existe avec un autre admin → set level2 (4-eyes)
+          // Si level1 existe avec le même admin → no-op (un même admin ne peut pas valider 2 fois)
+          let next: FieldValidation;
+          if (!existing.level1) {
+            next = { level1: stamp };
+          } else if (existing.level1.admin === admin) {
+            // Mise à jour de la 1ère validation (re-stamp si la valeur a changé)
+            next = { ...existing, level1: stamp };
+          } else if (!existing.level2) {
+            next = { ...existing, level2: stamp };
+          } else if (existing.level2.admin === admin) {
+            next = { ...existing, level2: stamp };
+          } else {
+            // 2 validations existent déjà avec d'autres admins; pas d'action
+            return s;
+          }
+          cur[path] = next;
+          return {
+            params: { ...s.params, fieldValidations: cur },
+            scenario: "custom",
+          };
+        }),
+      unvalidateField: (path, level) =>
+        set((s) => {
+          const cur = s.params.fieldValidations;
+          if (!cur || !cur[path]) return s;
+          const next = { ...cur };
+          const v = { ...next[path] };
+          if (level === 1) {
+            delete v.level1;
+            // Si on retire L1, on retire aussi L2 (logiquement le 4-eyes saute)
+            delete v.level2;
+          } else {
+            delete v.level2;
+          }
+          if (!v.level1 && !v.level2) {
+            delete next[path];
+          } else {
+            next[path] = v;
+          }
+          return {
+            params: { ...s.params, fieldValidations: next },
             scenario: "custom",
           };
         }),

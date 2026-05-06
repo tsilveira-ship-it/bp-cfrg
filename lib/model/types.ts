@@ -74,6 +74,18 @@ export type CoachAllocation = {
   hoursPerMonth: number;             // heures allouées / mois
 };
 
+/** Validation 4-eyes par champ — exige 2 admins distincts pour atteindre le niveau 2. */
+export type FieldValidationStamp = {
+  admin: string;          // email de l'admin
+  date: string;           // ISO timestamp
+  value: unknown;         // valeur figée au moment de la validation (pour invalidation auto si changement)
+};
+
+export type FieldValidation = {
+  level1?: FieldValidationStamp;  // 1ère validation
+  level2?: FieldValidationStamp;  // 2nde validation par un admin différent
+};
+
 /** Q&A inline par champ — thread de commentaires entre fondateur et analyste/investisseur. */
 export type FieldComment = {
   id: string;
@@ -287,6 +299,7 @@ export type ModelParams = {
   notes?: Record<string, string>;     // notes textuelles libres par scénario
   fieldNotes?: Record<string, FieldNote>; // annotations par champ (path → note + auteur + date)
   fieldQA?: Record<string, FieldQA>;  // threads Q&A par champ (#10)
+  fieldValidations?: Record<string, FieldValidation>; // validation 4-eyes par champ
   actuals?: ActualEntry[];            // réels mensuels observés (#20)
 
   legacy: {

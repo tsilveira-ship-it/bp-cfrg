@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useModelStore } from "@/lib/store";
 import { FieldNote } from "@/components/field-note";
+import { FieldValidator } from "@/components/field-validator";
 
 type Props = {
   path: string;
@@ -29,7 +30,10 @@ export function ParamNumber({ path, label, value, step = 1, unit = "n", hint }: 
     <div className="group/field space-y-1.5">
       <div className="flex items-center justify-between gap-2">
         <Label className="text-xs font-medium">{label}</Label>
-        <FieldNote path={path} label={label} />
+        <div className="flex items-center gap-0.5">
+          <FieldValidator path={path} value={value} label={label} />
+          <FieldNote path={path} label={label} />
+        </div>
       </div>
       <div className="relative">
         <Input
