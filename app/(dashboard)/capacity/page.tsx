@@ -1,5 +1,5 @@
 "use client";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useModelStore } from "@/lib/store";
 import { computeModel } from "@/lib/model/compute";
@@ -12,10 +12,14 @@ import { fmtNum, fmtPct } from "@/lib/format";
 import { InfoLabel } from "@/components/info-label";
 import {
   AlertTriangle,
+  Calculator,
   CheckCircle2,
   CalendarClock,
   ExternalLink,
   Info,
+  Lightbulb,
+  Target,
+  TrendingUp,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -29,9 +33,12 @@ import {
   ReferenceLine,
 } from "recharts";
 import {
-  computeMonthlyHours,
+  computeMonthlyCapacitySlots,
   HOURS_PER_FTE_PRODUCTIVE,
+  DEFAULT_AREAS,
+  DEFAULT_SCHEDULE,
 } from "@/lib/capacity-planner";
+import type { GymArea, WeeklySchedule } from "@/lib/model/types";
 
 const tooltipStyle = {
   backgroundColor: "white",
@@ -51,6 +58,26 @@ const DEFAULT_CAPACITY = {
 
 type CalcSource = "planner" | "fallback";
 
+const WEEKS_PER_MONTH = 4.3;
+
+/** Renvoie l'offre de places mensuelle selon la source. */
+function computeMonthlySlotsOffered(
+  hasPlanner: boolean,
+  areas: GymArea[],
+  schedule: WeeklySchedule,
+  scale: number,
+  fallbackCoachHours: number,
+  fallbackSlotsPerHour: number
+): number {
+  if (hasPlanner) {
+    // Σ areas (cours_par_sem × capacity_area) × WEEKS_PER_MONTH × scale
+    return computeMonthlyCapacitySlots(areas, schedule, scale);
+  }
+  // Fallback: si pas de planning, on assume que toutes les heures coach disponibles sont
+  // converties en cours, avec slots/h = capacityPerClass × parallelClasses
+  return fallbackCoachHours * fallbackSlotsPerHour;
+}
+
 export default function CapacityPage() {
   const params = useModelStore((s) => s.params);
   const patch = useModelStore((s) => s.patch);
@@ -68,63 +95,79 @@ export default function CapacityPage() {
     setParams((p) => ({ ...p, capacity: { ...DEFAULT_CAPACITY, ...(p.capacity ?? {}) } }));
   };
 
-  // === Source des heures coaching ===
-  // Priorité 1: planning détaillé /capacity-planner (areas + weeklySchedule + scaleByFy)
-  // Priorité 2: heuristique = pools freelance + cadres coachs détectés (130h × FTE)
+  // === Sources des heures coaching ===
   const planner = params.capacity ?? null;
   const hasPlanner = !!(planner?.areas && planner.weeklySchedule && planner.areas.length > 0);
+  const areas = planner?.areas ?? DEFAULT_AREAS;
+  const schedule = planner?.weeklySchedule ?? DEFAULT_SCHEDULE;
 
   const totalCoachingHours = (params.salaries.freelancePools ?? [])
     .filter((p) => p.monthlyHours > 0 || (p.hoursPerWeekday ?? 0) > 0)
     .reduce((s, p) => s + Math.max(0, effectiveMonthlyHours(p)), 0);
   const cadreCoaches = params.salaries.items.filter((it) => /coach|head/i.test(it.role));
   const cadreFte = cadreCoaches.reduce((s, it) => s + it.fte, 0);
-  const cadreHours = cadreFte * HOURS_PER_FTE_PRODUCTIVE; // approximation 130h productives par ETP
+  const cadreHours = cadreFte * HOURS_PER_FTE_PRODUCTIVE;
   const fallbackTotalHours = totalCoachingHours + cadreHours;
+  const fallbackSlotsPerHour = parallel * capPerClass;
 
-  // Source du calcul + heures par mois
   const source: CalcSource = hasPlanner ? "planner" : "fallback";
 
-  const slotsPerHour = parallel * capPerClass;
-  const slotsPerHourMin = parallel * capMin;
-  const slotsPerHourMax = parallel * capMax;
+  // Stats du planning (pour bandeau et explainer)
+  const classesPerWeek = hasPlanner
+    ? (5 * schedule.weekdayClassesPerArea + 2 * schedule.weekendClassesPerArea) * areas.length
+    : 0;
+  const sumCapacity = areas.reduce((s, a) => s + a.capacity, 0);
 
-  // Calcul des heures dispo par mois selon scaleByFy si planner
+  // Données mensuelles
   const data = result.monthly.map((m) => {
     const totalMembers = m.subsCount + m.legacyCount;
     const sessionsDemand = totalMembers * avgSessions;
-
-    let monthlyHoursOffered = fallbackTotalHours;
-    if (hasPlanner && planner!.areas && planner!.weeklySchedule) {
-      const fyIdx = m.fy;
-      const scale = planner!.scaleByFy?.[fyIdx] ?? 1;
-      monthlyHoursOffered = computeMonthlyHours(
-        planner!.areas,
-        planner!.weeklySchedule,
-        scale
-      );
-    }
-
-    const sessionsSupply = monthlyHoursOffered * slotsPerHour;
+    const fyIdx = m.fy;
+    const scale = planner?.scaleByFy?.[fyIdx] ?? 1;
+    const sessionsSupply = computeMonthlySlotsOffered(
+      hasPlanner,
+      areas,
+      schedule,
+      scale,
+      fallbackTotalHours,
+      fallbackSlotsPerHour
+    );
     const saturation = sessionsSupply > 0 ? sessionsDemand / sessionsSupply : 0;
-
     return {
       label: m.label,
       Membres: Math.round(totalMembers),
       "Saturation %": Math.round(saturation * 100),
       saturationVal: saturation,
-      monthlyHoursOffered,
+      sessionsDemand,
+      sessionsSupply,
+      scale,
     };
   });
 
   const maxSat = Math.max(...data.map((d) => d.saturationVal));
   const maxSatMonth = data.find((d) => d.saturationVal === maxSat);
-  const lastHours = data[data.length - 1]?.monthlyHoursOffered ?? fallbackTotalHours;
-  const baseHours = data[0]?.monthlyHoursOffered ?? fallbackTotalHours;
+  const lastMonth = result.monthly[result.monthly.length - 1];
+  const lastData = data[data.length - 1];
+  const lastMembers = lastMonth ? lastMonth.subsCount + lastMonth.legacyCount : 0;
+  const lastDemand = lastMembers * avgSessions;
+  const lastSupply = lastData?.sessionsSupply ?? 0;
 
-  const maxMembersTheoretical = (lastHours * slotsPerHour) / avgSessions;
-  const maxMembersMin = (lastHours * slotsPerHourMin) / avgSessions;
-  const maxMembersMax = (lastHours * slotsPerHourMax) / avgSessions;
+  // Capacité théorique max
+  const maxMembersAtSweetSpot = Math.floor((lastSupply * 0.85) / Math.max(1, avgSessions));
+  const maxMembersAt100 = Math.floor(lastSupply / Math.max(1, avgSessions));
+  const headroomMembers = maxMembersAt100 - lastMembers;
+
+  // Simulateur "what if" — état local
+  const [whatIfMembers, setWhatIfMembers] = useState(lastMembers);
+  const [whatIfSessions, setWhatIfSessions] = useState(avgSessions);
+  const [whatIfClassesPerWeekDelta, setWhatIfClassesPerWeekDelta] = useState(0);
+
+  const whatIfDemand = whatIfMembers * whatIfSessions;
+  const whatIfClassesPerWeek = classesPerWeek + whatIfClassesPerWeekDelta;
+  const whatIfSupply = hasPlanner
+    ? whatIfClassesPerWeek * (sumCapacity / Math.max(1, areas.length)) * WEEKS_PER_MONTH
+    : lastSupply;
+  const whatIfSaturation = whatIfSupply > 0 ? whatIfDemand / whatIfSupply : 0;
 
   return (
     <div className="space-y-6">
@@ -132,7 +175,8 @@ export default function CapacityPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Capacité opérationnelle</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Vue rapide saturation membres vs heures de cours offertes.
+            Saturation = places demandées (membres × sessions) ÷ places offertes (cours ×
+            capacité). Permet d&apos;évaluer ton potentiel et tes besoins en effectifs.
           </p>
         </div>
         <ScenarioSwitcher />
@@ -155,12 +199,11 @@ export default function CapacityPage() {
                   Source : planning détaillé /capacity-planner ✓
                 </div>
                 <p className="text-xs text-emerald-900/80 mt-1">
-                  Heures de cours/mois calculées depuis ton planning (
-                  {planner!.areas!.length} espace{planner!.areas!.length > 1 ? "s" : ""} ×{" "}
-                  {planner!.weeklySchedule!.weekdayClassesPerArea} cours/jour ouvré +{" "}
-                  {planner!.weeklySchedule!.weekendClassesPerArea} cours/jour weekend), avec
-                  scaling par FY appliqué. FY1: <b>{Math.round(baseHours)}h</b>, dernier FY:{" "}
-                  <b>{Math.round(lastHours)}h</b>.
+                  {areas.length} espace{areas.length > 1 ? "s" : ""} (capacités{" "}
+                  {areas.map((a) => a.capacity).join(", ")}) ×{" "}
+                  {schedule.weekdayClassesPerArea} cours/jour ouvré +{" "}
+                  {schedule.weekendClassesPerArea} cours/jour weekend ={" "}
+                  <b>{classesPerWeek} cours/semaine total</b>.
                 </p>
               </div>
               <Link
@@ -175,16 +218,13 @@ export default function CapacityPage() {
               <AlertTriangle className="h-5 w-5 text-amber-700 mt-0.5 shrink-0" />
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-sm text-amber-900">
-                  Source : heuristique (planning détaillé non configuré)
+                  Source : heuristique (planning non configuré)
                 </div>
                 <p className="text-xs text-amber-900/80 mt-1">
-                  Heures dispo estimées : <b>{Math.round(totalCoachingHours)}h</b> freelance
-                  pools + <b>{Math.round(cadreHours)}h</b> cadres coachs détectés ({cadreFte}{" "}
-                  ETP × 137h productives) = <b>{Math.round(fallbackTotalHours)}h/mois</b>{" "}
-                  constants. Pour un calcul précis avec scaling FY, configure le{" "}
-                  <Link href="/capacity-planner" className="underline">
-                    capacity planner
-                  </Link>
+                  Heures coach estimées : <b>{Math.round(totalCoachingHours)}h</b> freelance +{" "}
+                  <b>{Math.round(cadreHours)}h</b> cadres = {Math.round(fallbackTotalHours)}h ×{" "}
+                  {fallbackSlotsPerHour} slots/h ={" "}
+                  <b>{Math.round(fallbackTotalHours * fallbackSlotsPerHour)} places offertes/mois</b>
                   .
                 </p>
               </div>
@@ -199,13 +239,280 @@ export default function CapacityPage() {
         </CardContent>
       </Card>
 
+      {/* Carte explicative du calcul */}
+      <Card className="border-blue-200 bg-blue-50/20">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Calculator className="h-4 w-4 text-blue-700" /> Comment se calcule la saturation
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="rounded-md bg-white border p-3">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+                ① Demande
+              </div>
+              <div className="text-xs mt-1">
+                Membres × sessions/mois/membre
+              </div>
+              <div className="font-mono text-sm mt-2">
+                {fmtNum(lastMembers)} × {avgSessions} ={" "}
+                <b className="text-blue-700">{fmtNum(lastDemand)} places/mois</b>
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-1">
+                au dernier mois ({lastMonth?.label ?? "—"})
+              </div>
+            </div>
+            <div className="rounded-md bg-white border p-3">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+                ② Offre
+              </div>
+              <div className="text-xs mt-1">
+                {hasPlanner
+                  ? `Σ areas (cours/sem × capacité) × 4.3 × scaling FY`
+                  : "heures coach × slots/h"}
+              </div>
+              <div className="font-mono text-sm mt-2">
+                {hasPlanner ? (
+                  <>
+                    {classesPerWeek} cours × {(sumCapacity / Math.max(1, areas.length)).toFixed(1)} pl avg × 4.3 ×{" "}
+                    {(lastData?.scale ?? 1).toFixed(2)} ={" "}
+                    <b className="text-blue-700">{fmtNum(lastSupply)} places/mois</b>
+                  </>
+                ) : (
+                  <>
+                    {Math.round(fallbackTotalHours)}h × {fallbackSlotsPerHour} ={" "}
+                    <b className="text-blue-700">{fmtNum(lastSupply)} places/mois</b>
+                  </>
+                )}
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-1">
+                au dernier mois (scaling {(lastData?.scale ?? 1).toFixed(2)}×)
+              </div>
+            </div>
+            <div className="rounded-md bg-white border-2 border-blue-300 p-3">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+                ③ Saturation
+              </div>
+              <div className="text-xs mt-1">Demande ÷ Offre</div>
+              <div className="font-mono text-sm mt-2">
+                {fmtNum(lastDemand)} ÷ {fmtNum(lastSupply)} ={" "}
+                <b
+                  className={
+                    "text-lg " +
+                    (maxSat > 1
+                      ? "text-red-700"
+                      : maxSat > 0.85
+                        ? "text-amber-700"
+                        : "text-emerald-700")
+                  }
+                >
+                  {fmtPct(lastSupply > 0 ? lastDemand / lastSupply : 0, 0)}
+                </b>
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-1">
+                au dernier mois (max sur horizon : {fmtPct(maxSat)})
+              </div>
+            </div>
+          </div>
+          <div className="text-xs text-muted-foreground border-t pt-3">
+            💡 <b>Interprétation :</b> 100% = tous les cours pleins, plus aucune place dispo.
+            En pratique, il faut viser <b>70-85%</b> car (a) les membres ne viennent jamais tous
+            simultanément aux mêmes créneaux, (b) il faut une marge pour absorber les pics et les
+            essais.
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Potentiel & limites */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Target className="h-4 w-4 text-[#D32F2F]" /> Potentiel d&apos;évolution & limites
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Au dernier mois ({lastMonth?.label}), avec l&apos;offre actuelle de places.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="rounded-md border p-3">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+                Membres actuels
+              </div>
+              <div className="text-2xl font-heading font-bold mt-1">{fmtNum(lastMembers)}</div>
+              <div className="text-[10px] text-muted-foreground mt-1">
+                Saturation: {fmtPct(lastSupply > 0 ? lastDemand / lastSupply : 0, 0)}
+              </div>
+            </div>
+            <div className="rounded-md border border-emerald-300 bg-emerald-50/30 p-3">
+              <div className="text-[10px] uppercase tracking-widest text-emerald-800 font-bold">
+                Sweet spot (85% sat)
+              </div>
+              <div className="text-2xl font-heading font-bold text-emerald-700 mt-1">
+                {fmtNum(maxMembersAtSweetSpot)}
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-1">
+                Membres max à viser pour confort
+              </div>
+            </div>
+            <div className="rounded-md border border-amber-300 bg-amber-50/30 p-3">
+              <div className="text-[10px] uppercase tracking-widest text-amber-800 font-bold">
+                Plafond (100% sat)
+              </div>
+              <div className="text-2xl font-heading font-bold text-amber-700 mt-1">
+                {fmtNum(maxMembersAt100)}
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-1">
+                Au-delà = pertes / refus
+              </div>
+            </div>
+            <div className="rounded-md border p-3">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+                Marge (headroom)
+              </div>
+              <div
+                className={
+                  "text-2xl font-heading font-bold mt-1 " +
+                  (headroomMembers < 0
+                    ? "text-red-700"
+                    : headroomMembers < lastMembers * 0.15
+                      ? "text-amber-700"
+                      : "text-emerald-700")
+                }
+              >
+                {headroomMembers >= 0 ? "+" : ""}
+                {fmtNum(headroomMembers)}
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-1">
+                Membres possibles avant 100%
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Simulateur "What if" */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Lightbulb className="h-4 w-4 text-amber-600" /> Simulateur &laquo;&nbsp;Et si...&nbsp;&raquo;
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Teste l&apos;impact d&apos;ajouter des cours / changer le nb de membres / ajuster les
+            sessions.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <Label className="text-xs">Nb membres simulé</Label>
+              <Input
+                type="number"
+                value={whatIfMembers}
+                onChange={(e) => setWhatIfMembers(parseInt(e.target.value) || 0)}
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Actuel: {fmtNum(lastMembers)}
+              </p>
+            </div>
+            <div>
+              <Label className="text-xs">Sessions/membre/mois</Label>
+              <Input
+                type="number"
+                step={0.5}
+                value={whatIfSessions}
+                onChange={(e) => setWhatIfSessions(parseFloat(e.target.value) || 0)}
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Actuel: {avgSessions}
+              </p>
+            </div>
+            {hasPlanner ? (
+              <div>
+                <Label className="text-xs">Δ Cours/sem (vs planning)</Label>
+                <Input
+                  type="number"
+                  value={whatIfClassesPerWeekDelta}
+                  onChange={(e) => setWhatIfClassesPerWeekDelta(parseInt(e.target.value) || 0)}
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  +5 = ajouter 5 cours/sem au planning
+                </p>
+              </div>
+            ) : (
+              <div className="text-xs text-muted-foreground italic self-end pb-2">
+                Configure le planning pour simuler l&apos;ajout de cours.
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-lg border-2 border-blue-300 bg-blue-50/30 p-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-blue-900 font-bold">
+                  Demande simulée
+                </div>
+                <div className="font-mono text-xl mt-1">
+                  {fmtNum(whatIfMembers)} × {whatIfSessions} ={" "}
+                  <b>{fmtNum(whatIfDemand)} places</b>
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-blue-900 font-bold">
+                  Offre simulée
+                </div>
+                <div className="font-mono text-xl mt-1">
+                  <b>{fmtNum(whatIfSupply)} places</b>
+                </div>
+                {hasPlanner && whatIfClassesPerWeekDelta !== 0 && (
+                  <div className="text-[10px] text-muted-foreground">
+                    {classesPerWeek} {whatIfClassesPerWeekDelta > 0 ? "+" : ""}
+                    {whatIfClassesPerWeekDelta} = {whatIfClassesPerWeek} cours/sem
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-blue-900 font-bold">
+                  Saturation
+                </div>
+                <div
+                  className={
+                    "text-3xl font-heading font-bold mt-1 " +
+                    (whatIfSaturation > 1
+                      ? "text-red-700"
+                      : whatIfSaturation > 0.85
+                        ? "text-amber-700"
+                        : "text-emerald-700")
+                  }
+                >
+                  {fmtPct(whatIfSaturation, 0)}
+                </div>
+                {whatIfSaturation > 1 && (
+                  <div className="text-[10px] text-red-700 mt-1">
+                    ⚠️ Capacité dépassée — recruter ou ajouter des cours
+                  </div>
+                )}
+                {whatIfSaturation > 0.85 && whatIfSaturation <= 1 && (
+                  <div className="text-[10px] text-amber-700 mt-1">
+                    Tension — anticiper recrutement
+                  </div>
+                )}
+                {whatIfSaturation <= 0.85 && whatIfSaturation > 0 && (
+                  <div className="text-[10px] text-emerald-700 mt-1">
+                    OK — marge confortable
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Hypothèses */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Hypothèses capacité</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Ces paramètres servent au calcul de saturation. Les heures de cours offertes proviennent{" "}
-            {source === "planner" ? "du planning ci-dessus" : "de l'estimation heuristique"}.
-          </p>
         </CardHeader>
         <CardContent className="space-y-4">
           {!params.capacity && (
@@ -213,9 +520,6 @@ export default function CapacityPage() {
               <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <div className="font-semibold">Capacité utilise des valeurs par défaut</div>
-                <p className="text-amber-700/80 mt-0.5">
-                  Active le bloc capacité pour persister tes paramètres dans le scénario.
-                </p>
                 <button
                   onClick={enableCapacity}
                   className="mt-2 text-xs font-medium underline underline-offset-2 hover:no-underline"
@@ -225,58 +529,7 @@ export default function CapacityPage() {
               </div>
             </div>
           )}
-
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            <div>
-              <Label className="text-xs">Cours en parallèle (par créneau)</Label>
-              <Input
-                type="number"
-                min={1}
-                max={6}
-                value={parallel}
-                onChange={(e) =>
-                  patch("capacity.parallelClasses", parseInt(e.target.value) || 1)
-                }
-              />
-              <p className="text-[10px] text-muted-foreground mt-1">
-                Ex: 2 = WODs simultanés Hyrox + CrossFit.
-              </p>
-            </div>
-            <div>
-              <Label className="text-xs">Capacité moyenne par cours</Label>
-              <Input
-                type="number"
-                value={capPerClass}
-                onChange={(e) =>
-                  patch("capacity.capacityPerClass", parseFloat(e.target.value) || 0)
-                }
-              />
-              <p className="text-[10px] text-muted-foreground mt-1">Mid-point 12-16.</p>
-            </div>
-            <div>
-              <Label className="text-xs">Capacité min (range)</Label>
-              <Input
-                type="number"
-                value={capMin}
-                onChange={(e) =>
-                  patch("capacity.capacityPerClassMin", parseFloat(e.target.value) || 0)
-                }
-              />
-              <p className="text-[10px] text-muted-foreground mt-1">Borne basse (ex: 12).</p>
-            </div>
-            <div>
-              <Label className="text-xs">Capacité max (range)</Label>
-              <Input
-                type="number"
-                value={capMax}
-                onChange={(e) =>
-                  patch("capacity.capacityPerClassMax", parseFloat(e.target.value) || 0)
-                }
-              />
-              <p className="text-[10px] text-muted-foreground mt-1">Borne haute (ex: 16).</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <Label className="text-xs">Sessions/membre/mois (moyen)</Label>
               <Input
@@ -288,42 +541,49 @@ export default function CapacityPage() {
                 }
               />
               <p className="text-[10px] text-muted-foreground mt-1">
-                Moyenne pondérée par mix tier. ~8-10 typique.
+                ~8-10 typique CrossFit. <b>Driver clé de la demande.</b>
               </p>
             </div>
             <div>
-              <Label className="text-xs">Heures de cours offertes</Label>
-              <div className="h-9 px-3 flex items-center rounded-md border bg-muted/40 font-mono text-sm">
-                {hasPlanner ? (
-                  <>
-                    {Math.round(baseHours)}h → {Math.round(lastHours)}h/mois
-                  </>
-                ) : (
-                  <>{Math.round(fallbackTotalHours)}h/mois</>
-                )}
-              </div>
+              <Label className="text-xs">Cours en parallèle (par créneau)</Label>
+              <Input
+                type="number"
+                min={1}
+                max={6}
+                value={parallel}
+                onChange={(e) =>
+                  patch("capacity.parallelClasses", parseInt(e.target.value) || 1)
+                }
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">Sert au fallback heuristique.</p>
+            </div>
+            <div>
+              <Label className="text-xs">Capacité moy/cours</Label>
+              <Input
+                type="number"
+                value={capPerClass}
+                onChange={(e) =>
+                  patch("capacity.capacityPerClass", parseFloat(e.target.value) || 0)
+                }
+              />
               <p className="text-[10px] text-muted-foreground mt-1">
-                {hasPlanner
-                  ? "Évolue selon scaling FY du planner."
-                  : `${Math.round(totalCoachingHours)}h freelance + ${Math.round(cadreHours)}h cadres.`}
+                Range {capMin}-{capMax}.
               </p>
             </div>
             <div>
-              <Label className="text-xs">Slots/h effectifs</Label>
+              <Label className="text-xs">Heures/places offertes (mensuel)</Label>
               <div className="h-9 px-3 flex items-center rounded-md border bg-muted/40 font-mono text-sm">
-                {slotsPerHour}{" "}
-                <span className="text-xs text-muted-foreground ml-2">
-                  ({parallel} × {capPerClass})
-                </span>
+                {fmtNum(lastSupply)} places
               </div>
               <p className="text-[10px] text-muted-foreground mt-1">
-                Range: {slotsPerHourMin} – {slotsPerHourMax} membres/h.
+                Calculé depuis {hasPlanner ? "le planner" : "l'estimation heuristique"}.
               </p>
             </div>
           </div>
         </CardContent>
       </Card>
 
+      {/* KPIs synthèse */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Card>
           <CardContent className="pt-5">
@@ -346,11 +606,11 @@ export default function CapacityPage() {
         <Card>
           <CardContent className="pt-5">
             <div className="text-xs text-muted-foreground uppercase tracking-wider">
-              <InfoLabel label="Capacité théorique max" />
+              <InfoLabel label="Plafond membres" />
             </div>
-            <div className="text-2xl font-bold mt-1">{fmtNum(maxMembersTheoretical)}</div>
+            <div className="text-2xl font-bold mt-1">{fmtNum(maxMembersAt100)}</div>
             <div className="text-xs text-muted-foreground mt-1">
-              membres simultanés ({fmtNum(maxMembersMin)} – {fmtNum(maxMembersMax)})
+              à 100% saturation (sweet spot {fmtNum(maxMembersAtSweetSpot)})
             </div>
           </CardContent>
         </Card>
@@ -366,7 +626,7 @@ export default function CapacityPage() {
               ) : maxSat > 0.85 ? (
                 <>
                   <AlertTriangle className="h-5 w-5 text-amber-700" />
-                  <span className="text-sm font-semibold text-amber-700">Tension proche du max</span>
+                  <span className="text-sm font-semibold text-amber-700">Tension max</span>
                 </>
               ) : (
                 <>
@@ -379,12 +639,13 @@ export default function CapacityPage() {
         </Card>
       </section>
 
+      {/* Évolution */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Évolution membres + saturation</CardTitle>
           <p className="text-xs text-muted-foreground">
-            La ligne 100% = capacité max théorique. Au-delà → ajouter des cours, recruter ou
-            ajuster le scaling FY dans le planner.
+            Lignes pointillées : sweet spot 85% (ambre) et plafond 100% (rouge). Ajuster le scaling
+            FY dans le planner pour augmenter l&apos;offre dans le temps.
           </p>
         </CardHeader>
         <CardContent>
@@ -421,31 +682,42 @@ export default function CapacityPage() {
         </CardContent>
       </Card>
 
+      {/* Lecture & actions */}
       <Card className="bg-muted/30">
         <CardContent className="pt-5">
           <h3 className="font-semibold text-sm mb-2 flex items-center gap-2">
-            <Info className="h-4 w-4" /> Lecture
+            <TrendingUp className="h-4 w-4" /> Comment agir sur la saturation
           </h3>
-          <ul className="text-xs text-muted-foreground list-disc pl-5 space-y-1">
-            <li>
-              <strong>Saturation &lt; 70%</strong> = sous-utilisation, marge pour grossir.
-            </li>
-            <li>
-              <strong>70-85%</strong> = sweet spot. Capacité utilisée mais pas en stress.
-            </li>
-            <li>
-              <strong>85-100%</strong> = tension. Recruter coach ou ajouter des cours.
-            </li>
-            <li>
-              <strong>&gt; 100%</strong> = capacité dépassée. Pertes d&apos;abos / refus prospects.
-            </li>
-            <li>
-              💡 Pour ajuster le nb de cours, les espaces, l&apos;allocation cadres/freelance et le
-              scaling FY → <Link href="/capacity-planner" className="text-[#D32F2F] underline">/capacity-planner</Link>.
-            </li>
-          </ul>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-muted-foreground">
+            <div>
+              <div className="font-semibold text-foreground mb-1">Pour augmenter l&apos;offre</div>
+              <ul className="list-disc pl-4 space-y-0.5">
+                <li>Ajouter des cours/jour dans le planner</li>
+                <li>Augmenter la capacité par cours (jusqu&apos;à 16-18 max qualité)</li>
+                <li>Ajouter un espace d&apos;entraînement supplémentaire</li>
+                <li>Recruter plus de coachs (cadres ou freelance)</li>
+              </ul>
+            </div>
+            <div>
+              <div className="font-semibold text-foreground mb-1">Pour piloter la demande</div>
+              <ul className="list-disc pl-4 space-y-0.5">
+                <li>Pricing différencié selon créneaux (heures creuses moins cher)</li>
+                <li>Fermer les inscriptions au-delà du sweet spot</li>
+                <li>Limiter le nb de réservations/membre/semaine</li>
+                <li>Promouvoir les créneaux off-peak</li>
+              </ul>
+            </div>
+          </div>
+          <div className="text-xs text-muted-foreground border-t mt-3 pt-3">
+            💡 Pour ajuster espaces, planning et allocation cadres/freelance →{" "}
+            <Link href="/capacity-planner" className="text-[#D32F2F] underline">
+              /capacity-planner
+            </Link>{" "}
+            (vue détaillée).
+          </div>
         </CardContent>
       </Card>
     </div>
   );
 }
+
