@@ -14,8 +14,10 @@ import {
 type FinanceFlows = {
   inflow: number[];
   interestCash: number[];
-  principalCash: number[];
-  capitalized: number[]; // PIK accrual (non-cash)
+  principalCash: number[];        // total (loans + bonds) — pour cashflow
+  loanPrincipalCash: number[];    // séparé pour bilan
+  bondPrincipalCash: number[];    // séparé pour bilan
+  capitalized: number[];          // PIK accrual (non-cash)
 };
 
 function emptyFlows(H: number): FinanceFlows {
@@ -23,6 +25,8 @@ function emptyFlows(H: number): FinanceFlows {
     inflow: new Array(H).fill(0),
     interestCash: new Array(H).fill(0),
     principalCash: new Array(H).fill(0),
+    loanPrincipalCash: new Array(H).fill(0),
+    bondPrincipalCash: new Array(H).fill(0),
     capitalized: new Array(H).fill(0),
   };
 }
@@ -42,6 +46,7 @@ function loanFlows(loan: LoanLine, flows: FinanceFlows, H: number): void {
     bal -= principal;
     flows.interestCash[m] += Math.max(0, interest);
     flows.principalCash[m] += Math.max(0, principal);
+    flows.loanPrincipalCash[m] += Math.max(0, principal);
   }
 }
 
@@ -90,6 +95,7 @@ function bondFlows(bond: BondIssue, flows: FinanceFlows, H: number): void {
     if (m < H) {
       flows.interestCash[m] += interest;
       flows.principalCash[m] += principalRepaid;
+      flows.bondPrincipalCash[m] += principalRepaid;
     }
   }
 }
@@ -215,11 +221,14 @@ function monthlySalaries(p: ModelParams, horizonMonths: number): number[] {
 
 function monthlyRent(p: ModelParams, horizonMonths: number): number[] {
   const out = new Array<number>(horizonMonths).fill(0);
+  const franchise = Math.max(0, Math.floor(p.rent.franchiseMonths ?? 0));
   for (let m = 0; m < horizonMonths; m++) {
     const fy = Math.floor(m / FY_LEN);
     const moy = m % FY_LEN;
     const base = p.rent.monthlyByFy[fy] ?? p.rent.monthlyByFy[p.rent.monthlyByFy.length - 1];
-    let total = base + p.rent.monthlyCoopro;
+    // Franchise: loyer offert sur les N premiers mois (charges copro + taxes maintenues)
+    const rentBase = m < franchise ? 0 : base;
+    let total = rentBase + p.rent.monthlyCoopro;
     if (moy === 11) total += p.rent.yearlyTaxes;
     out[m] = total;
   }
@@ -449,9 +458,10 @@ export function computeModel(p: ModelParams): ModelResult {
     const cfo = ebitda - taxCash - bfrChange - monthlyVatCashOut[m];
     const cfi = -capexThis;
     const fundraise = finFlows.inflow[m];
-    const loanRepay = finFlows.principalCash[m];
-    const bondPrincipal = 0; // déjà inclus dans loanRepay (principalCash agrège loans + bonds)
-    const cff = fundraise - loanRepay - finFlows.interestCash[m];
+    const loanRepay = finFlows.loanPrincipalCash[m];
+    const bondPrincipal = finFlows.bondPrincipalCash[m];
+    const totalPrincipalCash = loanRepay + bondPrincipal;
+    const cff = fundraise - totalPrincipalCash - finFlows.interestCash[m];
 
     const netCashFlow = cfo + cfi + cff;
     cash += netCashFlow;
@@ -499,6 +509,7 @@ export function computeModel(p: ModelParams): ModelResult {
       bfrChange,
       loanPrincipalRepay: loanRepay,
       bondPrincipalRepay: bondPrincipal,
+      capitalizedInterest: finFlows.capitalized[m],
       fundraise,
       cfo,
       cfi,

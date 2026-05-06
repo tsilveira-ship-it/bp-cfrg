@@ -7,20 +7,31 @@ describe("cross-checks — scénario default", () => {
   const r = computeModel(DEFAULT_PARAMS);
   const checks = runCrossChecks(DEFAULT_PARAMS, r);
 
-  // Filtrer hors "Bilan" car le calcul actif=passif est approximatif (l'app affiche "écart")
   const structural = checks.filter((c) => c.category !== "Bilan");
-  const summary = summarizeChecks(structural);
+  const structuralSummary = summarizeChecks(structural);
 
   it("aucune erreur sur les contrôles structurels (P&L, Cashflow, Mensuel)", () => {
-    expect(summary.error).toBe(0);
+    expect(structuralSummary.error).toBe(0);
   });
 
   it("aucun warning structurel", () => {
-    expect(summary.warning).toBe(0);
+    expect(structuralSummary.warning).toBe(0);
   });
 
   it("au moins 10 contrôles structurels exécutés", () => {
-    expect(summary.total).toBeGreaterThanOrEqual(10);
+    expect(structuralSummary.total).toBeGreaterThanOrEqual(10);
+  });
+
+  // Tests bilan — devraient être OK après fix split loans/bonds + capitalized + vatPayable
+  const bilanChecks = checks.filter((c) => c.category === "Bilan");
+  const bilanSummary = summarizeChecks(bilanChecks);
+
+  it("bilan: contrôles exécutés pour chaque FY", () => {
+    expect(bilanSummary.total).toBeGreaterThan(0);
+  });
+
+  it("bilan: aucune erreur (équilibre Actif = Passif)", () => {
+    expect(bilanSummary.error).toBe(0);
   });
 });
 

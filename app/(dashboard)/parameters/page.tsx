@@ -443,10 +443,22 @@ export default function ParametersPage() {
                 })}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <ParamNumber path="rent.yearlyTaxes" label="Taxes annuelles (Foncière, CET, ...)" value={params.rent.yearlyTaxes} unit="€" />
               <ParamNumber path="rent.monthlyCoopro" label="Charges copropriété mensuelles" value={params.rent.monthlyCoopro} unit="€" />
+              <ParamNumber
+                path="rent.franchiseMonths"
+                label="Franchise loyer (mois)"
+                value={params.rent.franchiseMonths ?? 0}
+                unit="mois"
+                hint="Loyer offert sur N premiers mois (charges copro + taxes restent dues)"
+              />
             </div>
+            {(params.rent.franchiseMonths ?? 0) > 0 && (
+              <div className="rounded border border-emerald-300 bg-emerald-50/30 p-2 text-xs text-emerald-900">
+                💡 Économie franchise : <b>{(params.rent.franchiseMonths ?? 0)} × {(params.rent.monthlyByFy[0] ?? 0).toLocaleString("fr-FR")}€ = {((params.rent.franchiseMonths ?? 0) * (params.rent.monthlyByFy[0] ?? 0)).toLocaleString("fr-FR")}€</b> de loyer économisés au démarrage. Charges copro et taxes restent dues.
+              </div>
+            )}
           </AccordionContent>
         </AccordionItem>
 

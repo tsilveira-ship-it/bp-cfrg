@@ -330,6 +330,7 @@ export type ModelParams = {
     monthlyByFy: number[];   // length = horizonYears
     yearlyTaxes: number;
     monthlyCoopro: number;
+    franchiseMonths?: number;  // # mois de franchise au démarrage (loyer offert) — default 0
   };
 
   recurring: RecurringExpense[];
@@ -448,6 +449,7 @@ export type MonthlyComputed = {
   bfrChange: number;
   loanPrincipalRepay: number;
   bondPrincipalRepay: number;
+  capitalizedInterest: number;       // PIK accrued (non-cash) ce mois
   fundraise: number;
   cfo: number;
   cfi: number;
