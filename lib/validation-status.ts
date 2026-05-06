@@ -1,13 +1,22 @@
 import type { FieldValidation, ModelParams } from "./model/types";
 
-export type ValidationStatus = "none" | "level1" | "level1-stale" | "validated" | "validated-stale";
+export type ValidationStatus =
+  | "none"
+  | "level1"
+  | "level1-stale"
+  | "validated"
+  | "validated-stale"
+  | "flagged";
 
-/** Détermine l'état de validation d'un champ selon sa valeur actuelle. */
+/** Détermine l'état de validation d'un champ selon sa valeur actuelle.
+ *  Le flag "à revoir" prend toujours priorité sur les validations.
+ */
 export function getValidationStatus(
   validation: FieldValidation | undefined,
   currentValue: unknown
 ): ValidationStatus {
   if (!validation) return "none";
+  if (validation.flagged) return "flagged";
   const l1 = validation.level1;
   const l2 = validation.level2;
   if (!l1) return "none";
@@ -30,6 +39,7 @@ export type ValidationSummary = {
   validated: number;
   partial: number;     // level1 only
   stale: number;       // valeur changée depuis validation
+  flagged: number;     // marqué "à revoir" manuellement
   none: number;
 };
 
@@ -39,11 +49,12 @@ export function summarizeValidations(
   paths: string[],
   getValue: (path: string) => unknown
 ): ValidationSummary {
-  const out: ValidationSummary = { total: paths.length, validated: 0, partial: 0, stale: 0, none: 0 };
+  const out: ValidationSummary = { total: paths.length, validated: 0, partial: 0, stale: 0, flagged: 0, none: 0 };
   for (const p of paths) {
     const v = params.fieldValidations?.[p];
     const status = getValidationStatus(v, getValue(p));
-    if (status === "validated") out.validated++;
+    if (status === "flagged") out.flagged++;
+    else if (status === "validated") out.validated++;
     else if (status === "level1") out.partial++;
     else if (status === "level1-stale" || status === "validated-stale") out.stale++;
     else out.none++;

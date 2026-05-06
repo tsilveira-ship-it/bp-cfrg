@@ -84,6 +84,8 @@ export type FieldValidationStamp = {
 export type FieldValidation = {
   level1?: FieldValidationStamp;  // 1ère validation
   level2?: FieldValidationStamp;  // 2nde validation par un admin différent
+  /** Flag manuel "à revoir" — indépendant des validations, mis par n'importe qui. */
+  flagged?: { by: string; date: string; reason?: string };
 };
 
 /** Q&A inline par champ — thread de commentaires entre fondateur et analyste/investisseur. */

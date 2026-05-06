@@ -31,6 +31,8 @@ type Store = {
   toggleCommentResolved: (path: string, commentId: string) => void;
   validateField: (path: string, value: unknown, admin: string) => void;
   unvalidateField: (path: string, level: 1 | 2) => void;
+  flagField: (path: string, by: string, reason?: string) => void;
+  unflagField: (path: string) => void;
   applyScenario: (s: ScenarioName) => void;
   setLoaded: (l: LoadedRef) => void;
   loadParams: (params: ModelParams, ref: LoadedRef) => void;
@@ -169,7 +171,34 @@ export const useModelStore = create<Store>()(
           } else {
             delete v.level2;
           }
-          if (!v.level1 && !v.level2) {
+          if (!v.level1 && !v.level2 && !v.flagged) {
+            delete next[path];
+          } else {
+            next[path] = v;
+          }
+          return {
+            params: { ...s.params, fieldValidations: next },
+            scenario: "custom",
+          };
+        }),
+      flagField: (path, by, reason) =>
+        set((s) => {
+          const cur: Record<string, FieldValidation> = { ...(s.params.fieldValidations ?? {}) };
+          const existing = cur[path] ?? {};
+          cur[path] = { ...existing, flagged: { by, date: new Date().toISOString(), reason: reason?.trim() || undefined } };
+          return {
+            params: { ...s.params, fieldValidations: cur },
+            scenario: "custom",
+          };
+        }),
+      unflagField: (path) =>
+        set((s) => {
+          const cur = s.params.fieldValidations;
+          if (!cur || !cur[path]?.flagged) return s;
+          const next = { ...cur };
+          const v = { ...next[path] };
+          delete v.flagged;
+          if (!v.level1 && !v.level2 && !v.flagged) {
             delete next[path];
           } else {
             next[path] = v;

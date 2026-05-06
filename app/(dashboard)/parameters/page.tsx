@@ -13,6 +13,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
+import { ValidatedCell } from "@/components/validated-cell";
 import { SubsEvolutionEditor } from "@/components/subs-evolution-editor";
 import { CapexItemsEditor } from "@/components/capex-items-editor";
 import { SectionHeader } from "@/components/section-header";
@@ -412,24 +413,34 @@ export default function ParametersPage() {
             <div>
               <Label className="text-xs font-medium">Loyer mensuel par année (€)</Label>
               <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-7 gap-2 mt-1.5">
-                {params.rent.monthlyByFy.map((v, i) => (
-                  <div key={i}>
-                    <Label className="text-[10px] text-muted-foreground">FY{(params.timeline.startYear + i) % 100}</Label>
-                    <Input
-                      type="number"
+                {params.rent.monthlyByFy.map((v, i) => {
+                  const fyLabel = `FY${(params.timeline.startYear + i) % 100}`;
+                  return (
+                    <ValidatedCell
+                      key={i}
+                      path={`rent.monthlyByFy.${i}`}
                       value={v}
-                      onChange={(e) =>
-                        setParams((p) => ({
-                          ...p,
-                          rent: {
-                            ...p.rent,
-                            monthlyByFy: p.rent.monthlyByFy.map((x, j) => (j === i ? parseFloat(e.target.value) || 0 : x)),
-                          },
-                        }))
-                      }
-                    />
-                  </div>
-                ))}
+                      label={fyLabel}
+                      compact
+                    >
+                      <Input
+                        type="number"
+                        value={v}
+                        onChange={(e) =>
+                          setParams((p) => ({
+                            ...p,
+                            rent: {
+                              ...p.rent,
+                              monthlyByFy: p.rent.monthlyByFy.map((x, j) =>
+                                j === i ? parseFloat(e.target.value) || 0 : x
+                              ),
+                            },
+                          }))
+                        }
+                      />
+                    </ValidatedCell>
+                  );
+                })}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -460,19 +471,25 @@ export default function ParametersPage() {
                     />
                   </div>
                   <div className="col-span-3">
-                    <Label className="text-xs">Mensuel (€)</Label>
-                    <Input
-                      type="number"
+                    <ValidatedCell
+                      path={`recurring.${idx}.monthly`}
                       value={it.monthly}
-                      onChange={(e) =>
-                        setParams((p) => ({
-                          ...p,
-                          recurring: p.recurring.map((r, i) =>
-                            i === idx ? { ...r, monthly: parseFloat(e.target.value) || 0 } : r
-                          ),
-                        }))
-                      }
-                    />
+                      label={`${it.name} — Mensuel (€)`}
+                      compact
+                    >
+                      <Input
+                        type="number"
+                        value={it.monthly}
+                        onChange={(e) =>
+                          setParams((p) => ({
+                            ...p,
+                            recurring: p.recurring.map((r, i) =>
+                              i === idx ? { ...r, monthly: parseFloat(e.target.value) || 0 } : r
+                            ),
+                          }))
+                        }
+                      />
+                    </ValidatedCell>
                   </div>
                   <div className="col-span-3">
                     <Label className="text-xs">Catégorie</Label>

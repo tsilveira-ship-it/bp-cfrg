@@ -374,7 +374,7 @@ export default function AssumptionsPage() {
               </p>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
                 <div className="rounded border border-emerald-300 bg-emerald-50/30 p-2">
                   <div className="flex items-center gap-1 text-emerald-700 font-bold">
                     <CheckCheck className="h-3.5 w-3.5" /> Doublement validé
@@ -391,9 +391,18 @@ export default function AssumptionsPage() {
                     {summary.partial}
                   </div>
                 </div>
+                <div className="rounded border border-red-300 bg-red-50/30 p-2">
+                  <div className="flex items-center gap-1 text-red-700 font-bold">
+                    🚩 À revoir
+                  </div>
+                  <div className="text-2xl font-heading font-bold text-red-700">
+                    {summary.flagged}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">signalé manuellement</div>
+                </div>
                 <div className="rounded border border-orange-300 bg-orange-50/30 p-2">
                   <div className="flex items-center gap-1 text-orange-700 font-bold">
-                    ⚠️ À re-valider
+                    ⚠️ Stale
                   </div>
                   <div className="text-2xl font-heading font-bold text-orange-700">
                     {summary.stale}
@@ -572,6 +581,13 @@ export default function AssumptionsPage() {
 }
 
 function ValidationBadge({ status }: { status: ReturnType<typeof getValidationStatus> }) {
+  if (status === "flagged") {
+    return (
+      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-800">
+        🚩 à revoir
+      </span>
+    );
+  }
   if (status === "validated") {
     return (
       <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800">
