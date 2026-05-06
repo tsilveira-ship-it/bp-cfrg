@@ -20,7 +20,7 @@ import { SectionHeader } from "@/components/section-header";
 import { StartMonthPicker } from "@/components/start-month-picker";
 import { Trash2, Plus } from "lucide-react";
 import { fmtPct, fmtCurrency } from "@/lib/format";
-import { expandCapex } from "@/lib/model/types";
+import { expandCapex, type ModelParams, type LegacyCohort } from "@/lib/model/types";
 
 export default function ParametersPage() {
   const params = useModelStore((s) => s.params);
@@ -361,11 +361,65 @@ export default function ParametersPage() {
               </div>
             </div>
           </AccordionTrigger>
-          <AccordionContent className="px-6 pb-6">
+          <AccordionContent className="px-6 pb-6 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <ParamNumber path="legacy.startCount" label="Membres au Sept 2025" value={params.legacy.startCount} />
               <ParamNumber path="legacy.avgMonthlyPrice" label="Prix mensuel moyen" value={params.legacy.avgMonthlyPrice} unit="€" step={1} />
-              <ParamNumber path="legacy.yearlyChurnAbs" label="Churn / an (membres)" value={params.legacy.yearlyChurnAbs} hint="Linéaire mois par mois" />
+              <ParamNumber path="legacy.yearlyChurnAbs" label="Churn / an (membres)" value={params.legacy.yearlyChurnAbs} hint="Linéaire mois par mois (utilisé si pas de cohortes)" />
+            </div>
+
+            <LegacyCohortsEditor params={params} setParams={setParams} />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
+              <div>
+                <Label className="text-xs">Migration legacy → nouveaux abos / mois (%)</Label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={((params.legacy.monthlyMigrationPct ?? 0) * 100).toFixed(2)}
+                    onChange={(e) =>
+                      setParams((p) => ({
+                        ...p,
+                        legacy: {
+                          ...p.legacy,
+                          monthlyMigrationPct: (parseFloat(e.target.value) || 0) / 100,
+                        },
+                      }))
+                    }
+                    className="pr-7"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                    %
+                  </span>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Membre migré sort de legacy + crédité comme acquisition new (sans CAC).
+                </p>
+              </div>
+              <div>
+                <Label className="text-xs">Tier cible migration (optionnel)</Label>
+                <select
+                  className="w-full h-9 px-3 rounded-md border bg-background text-sm"
+                  value={params.legacy.migrationTargetTierId ?? ""}
+                  onChange={(e) =>
+                    setParams((p) => ({
+                      ...p,
+                      legacy: {
+                        ...p.legacy,
+                        migrationTargetTierId: e.target.value || undefined,
+                      },
+                    }))
+                  }
+                >
+                  <option value="">Distribué selon mix global</option>
+                  {params.subs.tiers.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </AccordionContent>
         </AccordionItem>
@@ -993,6 +1047,191 @@ export default function ParametersPage() {
           </AccordionContent>
         </AccordionItem>
       </Accordion>
+    </div>
+  );
+}
+
+function LegacyCohortsEditor({
+  params,
+  setParams,
+}: {
+  params: ModelParams;
+  setParams: (updater: (p: ModelParams) => ModelParams) => void;
+}) {
+  const cohorts = params.legacy.cohorts ?? [];
+  const enabled = cohorts.length > 0;
+  const totalCount = cohorts.reduce((s, c) => s + c.startCount, 0);
+
+  const addCohort = () => {
+    setParams((p) => ({
+      ...p,
+      legacy: {
+        ...p.legacy,
+        cohorts: [
+          ...(p.legacy.cohorts ?? []),
+          {
+            id: `coh_${Date.now()}`,
+            name: "Nouvelle cohorte",
+            startCount: 50,
+            avgMonthlyPrice: p.legacy.avgMonthlyPrice,
+            monthlyChurnPct: 0.015,
+          },
+        ],
+      },
+    }));
+  };
+
+  const removeCohort = (id: string) => {
+    setParams((p) => ({
+      ...p,
+      legacy: {
+        ...p.legacy,
+        cohorts: (p.legacy.cohorts ?? []).filter((c) => c.id !== id),
+      },
+    }));
+  };
+
+  const updateCohort = (id: string, patch: Partial<LegacyCohort>) => {
+    setParams((p) => ({
+      ...p,
+      legacy: {
+        ...p.legacy,
+        cohorts: (p.legacy.cohorts ?? []).map((c) => (c.id === id ? { ...c, ...patch } : c)),
+      },
+    }));
+  };
+
+  const seedDefault = () => {
+    setParams((p) => ({
+      ...p,
+      legacy: {
+        ...p.legacy,
+        cohorts: [
+          { id: `coh_long_${Date.now()}`, name: "2020-2022 long-stay", startCount: 80, avgMonthlyPrice: 130, monthlyChurnPct: 0.005 },
+          { id: `coh_mid_${Date.now() + 1}`, name: "2023-2024 mid", startCount: 100, avgMonthlyPrice: 120, monthlyChurnPct: 0.015 },
+          { id: `coh_recent_${Date.now() + 2}`, name: "2025 récents", startCount: 40, avgMonthlyPrice: 115, monthlyChurnPct: 0.025 },
+        ],
+      },
+    }));
+  };
+
+  return (
+    <div className="border-2 border-dashed border-muted-foreground/30 rounded-lg p-3 bg-muted/5 space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h5 className="text-xs font-semibold uppercase tracking-wider">
+            Cohortes legacy multi-vintage (Niveau 4)
+          </h5>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            Modélise différents groupes de membres legacy avec churn différencié.
+            Override les 3 champs ci-dessus.
+            {enabled ? (
+              <span className="ml-1 text-foreground">
+                Total : <strong>{totalCount}</strong> membres ({cohorts.length} cohortes)
+              </span>
+            ) : null}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {!enabled ? (
+            <>
+              <Button variant="ghost" size="sm" onClick={seedDefault} className="text-xs h-7">
+                Preset 3 cohortes
+              </Button>
+              <Button variant="outline" size="sm" onClick={addCohort} className="text-xs h-7">
+                <Plus className="h-3 w-3 mr-1" /> Ajouter
+              </Button>
+            </>
+          ) : (
+            <Button variant="outline" size="sm" onClick={addCohort} className="text-xs h-7">
+              <Plus className="h-3 w-3 mr-1" /> Ajouter cohorte
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {enabled ? (
+        <div className="space-y-2">
+          {cohorts.map((c) => {
+            const retention = c.monthlyChurnPct > 0 ? 1 / c.monthlyChurnPct : null;
+            return (
+              <div
+                key={c.id}
+                className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end p-2 border rounded-md bg-background"
+              >
+                <div className="md:col-span-4">
+                  <Label className="text-[10px]">Nom</Label>
+                  <Input
+                    value={c.name}
+                    onChange={(e) => updateCohort(c.id, { name: e.target.value })}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <Label className="text-[10px]">Effectif M0</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    value={c.startCount}
+                    onChange={(e) =>
+                      updateCohort(c.id, { startCount: parseFloat(e.target.value) || 0 })
+                    }
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <Label className="text-[10px]">Prix mensuel</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    value={c.avgMonthlyPrice}
+                    onChange={(e) =>
+                      updateCohort(c.id, { avgMonthlyPrice: parseFloat(e.target.value) || 0 })
+                    }
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="md:col-span-3">
+                  <Label className="text-[10px]">
+                    Churn / mo (rétention {retention ? `~${retention.toFixed(0)} mo` : "∞"})
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      step="0.1"
+                      value={(c.monthlyChurnPct * 100).toFixed(2)}
+                      onChange={(e) =>
+                        updateCohort(c.id, {
+                          monthlyChurnPct: (parseFloat(e.target.value) || 0) / 100,
+                        })
+                      }
+                      className="h-8 text-xs pr-6"
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
+                      %
+                    </span>
+                  </div>
+                </div>
+                <div className="md:col-span-1 text-right">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-600 h-8"
+                    onClick={() => removeCohort(c.id)}
+                    title="Supprimer cohorte"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-[10px] text-muted-foreground italic">
+          Aucune cohorte définie. Mode legacy linéaire (yearlyChurnAbs) actif.
+        </p>
+      )}
     </div>
   );
 }

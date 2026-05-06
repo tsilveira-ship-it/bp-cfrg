@@ -120,6 +120,18 @@ export type FieldNote = {
   date: string;           // ISO timestamp dernière édition
 };
 
+/** Niveau 4 — cohorte legacy avec dynamique propre. */
+export type LegacyCohort = {
+  id: string;
+  name: string;
+  /** Effectif au mois 0 (M0 = début FY26). */
+  startCount: number;
+  /** Prix moyen mensuel TTC pour cette cohorte. */
+  avgMonthlyPrice: number;
+  /** Churn mensuel (% qui quitte chaque mois). */
+  monthlyChurnPct: number;
+};
+
 export type SubscriptionTier = {
   id: string;
   name: string;
@@ -356,6 +368,22 @@ export type ModelParams = {
     startCount: number;
     avgMonthlyPrice: number;
     yearlyChurnAbs: number;
+    /**
+     * Niveau 4 — multi-cohortes legacy.
+     * Si défini ET non vide, override `startCount`/`yearlyChurnAbs`/`avgMonthlyPrice`
+     * pour modéliser des cohortes legacy avec dynamiques différenciées.
+     * Chaque cohorte décroît exponentiellement à son propre `monthlyChurnPct`.
+     * Total legacy[m] = Σ cohortes count[i][m].
+     */
+    cohorts?: LegacyCohort[];
+    /**
+     * Niveau 4 — % mensuel de migration legacy → CFRG nouveaux abos.
+     * Membre migré sort des cohortes legacy + crédité comme acquisition new
+     * (sans CAC car déjà membre). Si undefined, pas de migration.
+     */
+    monthlyMigrationPct?: number;
+    /** Tier cible pour la migration (par id). Si undefined, distribué selon mix global. */
+    migrationTargetTierId?: string;
   };
 
   prestations: {

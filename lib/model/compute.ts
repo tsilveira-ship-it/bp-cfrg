@@ -406,16 +406,59 @@ function monthlySubsRevenueByTier(p: ModelParams, perTier: number[][]): number[]
   return out;
 }
 
+/**
+ * Niveau 4 — calcul legacy multi-cohortes.
+ * Si `p.legacy.cohorts` défini et non vide, chaque cohorte décroît
+ * exponentiellement à son propre `monthlyChurnPct`. Migration legacy → CFRG
+ * appliquée comme sortie supplémentaire (non comptée comme churn) si
+ * `monthlyMigrationPct > 0`.
+ *
+ * Migrants par mois sont retournés via `migrants[]` pour pouvoir les injecter
+ * comme acquisitions new dans le funnel CFRG.
+ *
+ * Si pas de cohorts définies, fallback comportement legacy (linéaire absolu).
+ */
 function monthlyLegacy(p: ModelParams, horizonMonths: number) {
   const count = new Array<number>(horizonMonths).fill(0);
   const revenue = new Array<number>(horizonMonths).fill(0);
-  const monthlyChurn = p.legacy.yearlyChurnAbs / FY_LEN;
-  for (let m = 0; m < horizonMonths; m++) {
-    const c = Math.max(0, p.legacy.startCount - monthlyChurn * m);
-    count[m] = c;
-    revenue[m] = c * p.legacy.avgMonthlyPrice;
+  const migrants = new Array<number>(horizonMonths).fill(0);
+
+  const cohorts = p.legacy.cohorts;
+  const migrationPct = p.legacy.monthlyMigrationPct ?? 0;
+  const useCohorts = Array.isArray(cohorts) && cohorts.length > 0;
+
+  if (useCohorts) {
+    // Stock par cohorte : on décrémente churn + migration mois par mois.
+    const stocks = cohorts.map((c) => c.startCount);
+    for (let m = 0; m < horizonMonths; m++) {
+      let totalCount = 0;
+      let totalRevenue = 0;
+      let totalMigrants = 0;
+      for (let i = 0; i < cohorts.length; i++) {
+        totalCount += stocks[i];
+        totalRevenue += stocks[i] * cohorts[i].avgMonthlyPrice;
+        // Décrément pour mois suivant : churn + migration
+        const churned = stocks[i] * cohorts[i].monthlyChurnPct;
+        const migrated = stocks[i] * migrationPct;
+        totalMigrants += migrated;
+        stocks[i] = Math.max(0, stocks[i] - churned - migrated);
+      }
+      count[m] = totalCount;
+      revenue[m] = totalRevenue;
+      migrants[m] = totalMigrants;
+    }
+  } else {
+    // Mode legacy original : décroissance linéaire absolue.
+    const monthlyChurn = p.legacy.yearlyChurnAbs / FY_LEN;
+    for (let m = 0; m < horizonMonths; m++) {
+      const c = Math.max(0, p.legacy.startCount - monthlyChurn * m);
+      count[m] = c;
+      revenue[m] = c * p.legacy.avgMonthlyPrice;
+      // Migration applicable même en mode flat
+      if (migrationPct > 0) migrants[m] = c * migrationPct;
+    }
   }
-  return { count, revenue };
+  return { count, revenue, migrants };
 }
 
 function monthlyPrestations(p: ModelParams, horizonMonths: number): number[] {
@@ -527,13 +570,32 @@ export function computeModel(p: ModelParams): ModelResult {
   );
   const H = tl.horizonMonths;
 
+  // Niveau 4 — legacy calculée en premier pour récupérer migrants → acquisitions new
+  const legacy = monthlyLegacy(p, H);
+  const hasMigrants = legacy.migrants.some((v) => v > 0);
+
   // Niveau 2 — si tier-level churn actif ET cohort actif, on calcule en per-tier
   // (compte total + revenu pondéré par prix de chaque tier).
   const useCohort = p.subs.cohortModel?.enabled === true;
   const hasTierChurn = p.subs.tiers.some((t) => t.monthlyChurnPct !== undefined);
   let subsCount: number[];
   let subsRevenue: number[];
-  if (useCohort && hasTierChurn) {
+  if (useCohort && hasMigrants) {
+    // Inject migrants comme acquisitions supplémentaires dans le cohort sum
+    const baseAcq = monthlyAcquisitions(p, H);
+    const totalAcq = baseAcq.map((v, i) => v + legacy.migrants[i]);
+    const churn = p.subs.monthlyChurnPct ?? 0;
+    const curve = p.subs.cohortModel?.retentionCurve;
+    subsCount = new Array<number>(H).fill(0);
+    for (let m = 0; m < H; m++) {
+      let total = 0;
+      for (let k = 0; k <= m; k++) {
+        total += totalAcq[k] * evalRetention(m - k, churn, curve);
+      }
+      subsCount[m] = total;
+    }
+    subsRevenue = monthlySubsRevenue(p, subsCount);
+  } else if (useCohort && hasTierChurn) {
     const byTier = monthlySubsCountByTier(p, H);
     subsCount = byTier.total;
     subsRevenue = monthlySubsRevenueByTier(p, byTier.perTier);
@@ -541,7 +603,6 @@ export function computeModel(p: ModelParams): ModelResult {
     subsCount = monthlySubsCount(p, H);
     subsRevenue = monthlySubsRevenue(p, subsCount);
   }
-  const legacy = monthlyLegacy(p, H);
   const prest = monthlyPrestations(p, H);
   const merch = monthlyMerch(p, H);
 
