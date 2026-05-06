@@ -13,6 +13,7 @@ import {
 } from "@/components/charts";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
 import { SynthesisCard } from "@/components/synthesis-card";
+import { IntentionHub } from "@/components/intention-hub";
 import { fmtCurrency, fmtPct } from "@/lib/format";
 import {
   TrendingUp,
@@ -75,6 +76,8 @@ export default function DashboardPage() {
         </div>
         <ScenarioSwitcher />
       </header>
+
+      <IntentionHub />
 
       <SynthesisCard />
 
