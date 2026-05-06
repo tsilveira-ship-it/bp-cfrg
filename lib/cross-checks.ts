@@ -202,15 +202,20 @@ export function runCrossChecks(p: ModelParams, r: ModelResult): CrossCheck[] {
     const slice = r.monthly.slice(0, monthsToEnd);
     const bondPrincipalRepaid = slice.reduce((s, m) => s + m.bondPrincipalRepay, 0);
     const loanPrincipalRepaid = slice.reduce((s, m) => s + m.loanPrincipalRepay, 0);
-    const dette =
-      Math.max(
-        0,
-        (p.financing.bonds ?? []).reduce((s, b) => s + b.principal, 0) -
-          bondPrincipalRepaid +
-          (p.financing.loans ?? []).reduce((s, l) => s + l.principal, 0) -
-          loanPrincipalRepaid
-      );
-    const totalPassif = capitauxPropres + dette;
+    const capitalizedCum = slice.reduce((s, m) => s + (m.capitalizedInterest ?? 0), 0);
+    const dette = Math.max(
+      0,
+      (p.financing.bonds ?? []).reduce((s, b) => s + b.principal, 0) -
+        bondPrincipalRepaid +
+        capitalizedCum +
+        (p.financing.loans ?? []).reduce((s, l) => s + l.principal, 0) -
+        loanPrincipalRepaid
+    );
+    const vatPayable = Math.max(
+      0,
+      slice.reduce((s, m) => s + (m.vatNetPayable - m.vatCashOut), 0)
+    );
+    const totalPassif = capitauxPropres + dette + vatPayable;
     checks.push(
       makeCheck(
         `bs-balance-${y.label}`,

@@ -191,9 +191,34 @@ export function runHealthCheck(p: ModelParams, result?: ModelResult): HealthIssu
       }, 0);
 
       const cap = p.capacity;
-      if (cap) {
+      const hasPlanner = !!(cap?.areas && cap.weeklySchedule && cap.areas.length > 0);
+      if (cap && hasPlanner) {
+        // Calcul correct utilisant le planner: places offertes = Σ areas (cours/sem × capacité) × 4.3
+        const lastFyIdx = result.yearly.length - 1;
+        const scale = cap.scaleByFy?.[lastFyIdx] ?? 1;
+        const classesPerWeekPerArea =
+          5 * cap.weeklySchedule!.weekdayClassesPerArea + 2 * cap.weeklySchedule!.weekendClassesPerArea;
+        const totalCapacity = (cap.areas ?? []).reduce((s, a) => s + a.capacity, 0);
+        const slotsOfferedPerMonth = classesPerWeekPerArea * totalCapacity * 4.3 * scale;
+        const sessionsDemand = subsCount * cap.avgSessionsPerMonth;
+        const saturation = slotsOfferedPerMonth > 0 ? sessionsDemand / slotsOfferedPerMonth : 0;
+        if (saturation > 0.95) {
+          issues.push({
+            id: "capacity",
+            severity: saturation > 1 ? "critical" : "warning",
+            title: `Capacité ${(saturation * 100).toFixed(0)}% en fin d'horizon`,
+            message: `${Math.round(subsCount)} membres × ${cap.avgSessionsPerMonth} sessions = ${Math.round(sessionsDemand)} places demandées vs ${Math.round(slotsOfferedPerMonth)} offertes (${cap.areas!.length} espaces × ${classesPerWeekPerArea} cours/sem × cap moy ${(totalCapacity / Math.max(1, cap.areas!.length)).toFixed(1)}).`,
+            hint: "Augmente le nb de cours/jour dans /capacity-planner, le scaling FY, ou ajoute un espace.",
+            link: { href: "/capacity", label: "Voir capacité" },
+          });
+        }
+      } else if (cap) {
+        // Capacity définie mais sans planner: heuristique avec slotsPerHour × heures coach
         const slotsPerHour = cap.parallelClasses * cap.capacityPerClass;
-        const sessionsSupply = monthlyCoachHours * slotsPerHour;
+        const cadreCoachItems = p.salaries.items.filter((it) => /coach|head/i.test(it.role));
+        const cadreHours = cadreCoachItems.reduce((s, it) => s + it.fte * 130, 0);
+        const totalHours = monthlyCoachHours + cadreHours;
+        const sessionsSupply = totalHours * slotsPerHour;
         const sessionsDemand = subsCount * cap.avgSessionsPerMonth;
         const saturation = sessionsSupply > 0 ? sessionsDemand / sessionsSupply : 0;
         if (saturation > 0.95) {
@@ -201,8 +226,8 @@ export function runHealthCheck(p: ModelParams, result?: ModelResult): HealthIssu
             id: "capacity",
             severity: saturation > 1 ? "critical" : "warning",
             title: `Capacité ${(saturation * 100).toFixed(0)}% en fin d'horizon`,
-            message: `${subsCount} membres × ${cap.avgSessionsPerMonth} sessions = ${Math.round(sessionsDemand)} sessions/mois demandées vs ${Math.round(sessionsSupply)} offertes (${cap.parallelClasses} cours × ${cap.capacityPerClass} pers × ${monthlyCoachHours.toFixed(0)}h coaching).`,
-            hint: "Augmente parallelClasses, capacityPerClass, ou les heures freelance pools.",
+            message: `${Math.round(subsCount)} membres × ${cap.avgSessionsPerMonth} sessions = ${Math.round(sessionsDemand)} demandées vs ${Math.round(sessionsSupply)} offertes (${slotsPerHour} slots/h × ${Math.round(totalHours)}h coach).`,
+            hint: "Configure le planner détaillé /capacity-planner pour un calcul précis.",
             link: { href: "/capacity", label: "Voir capacité" },
           });
         }

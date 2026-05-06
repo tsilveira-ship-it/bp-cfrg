@@ -329,6 +329,8 @@ export default function AuditPage() {
 
       <SynthesisCard />
 
+      <RisksFlagsCard params={params} result={currentResult} />
+
       <Tabs defaultValue="savings" className="space-y-4">
         <TabsList>
           <TabsTrigger value="savings">
@@ -478,5 +480,134 @@ export default function AuditPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function RisksFlagsCard({
+  params,
+  result,
+}: {
+  params: ModelParams;
+  result: ReturnType<typeof computeModel>;
+}) {
+  const flags = Object.entries(params.fieldValidations ?? {}).filter(([, v]) => v.flagged);
+  const lastFy = result.yearly[result.yearly.length - 1];
+  const cashTrough = result.cashTroughValue;
+
+  // Risques modèle critiques (high impact)
+  const risks: { severity: Severity; title: string; body: string; mitigation: string }[] = [];
+  if (cashTrough < 0) {
+    risks.push({
+      severity: "high",
+      title: "Trésorerie négative en cours d'horizon",
+      body: `Creux mensuel atteint ${fmtCurrency(cashTrough, { compact: true })} — le BP n'est pas finançable en l'état.`,
+      mitigation: "Renforcer apports, accélérer revenue ou réduire CAPEX/OPEX.",
+    });
+  }
+  if (lastFy.ebitdaMargin > 0.4) {
+    risks.push({
+      severity: "medium",
+      title: `Marge EBITDA finale très élevée (${fmtPct(lastFy.ebitdaMargin, 0)})`,
+      body: `Comparé au benchmark sectoriel 15-25%, ta marge sortie est inhabituelle.`,
+      mitigation:
+        "Justifier (modèle premium, automation, taille effective) ou stress-tester via /sensitivity. Anticiper la question des fonds.",
+    });
+  }
+  if ((params.subs.monthlyChurnPct ?? 0) === 0) {
+    risks.push({
+      severity: "medium",
+      title: "Churn mensuel à 0%",
+      body: "Aucun churn modélisé sur les nouveaux abos. Industrie fitness 3-5%/mois, CrossFit 1.5-3%.",
+      mitigation: "Renseigner subs.monthlyChurnPct (1.5-3% recommandé) — re-tester impact tréso.",
+    });
+  }
+  if (params.bfr.daysOfRevenue === 0 && !params.bfr.daysReceivables) {
+    risks.push({
+      severity: "low",
+      title: "BFR non modélisé (0 jours)",
+      body: "Pas de cycle d'encaissement. Pour B2C avec Square, c'est OK (~3j seulement).",
+      mitigation: "Activer BFR détaillé sur /parameters → Fiscalité.",
+    });
+  }
+  if (result.breakEvenMonth === null) {
+    risks.push({
+      severity: "high",
+      title: "Break-even non atteint sur l'horizon",
+      body: "EBITDA cumulé reste négatif jusqu'en " + result.fyLabels[result.fyLabels.length - 1] + ".",
+      mitigation: "Allonger horizon ou réviser hypothèses growth/CAC.",
+    });
+  }
+
+  if (flags.length === 0 && risks.length === 0) return null;
+
+  return (
+    <Card className="border-red-200 bg-red-50/20">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 text-red-700" /> Risques & champs à revoir
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Synthèse des risques détectés automatiquement + champs signalés à revoir par les
+          utilisateurs.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {risks.length > 0 && (
+          <div className="space-y-2">
+            {risks.map((r, i) => (
+              <div
+                key={i}
+                className={
+                  "rounded border p-3 " +
+                  (r.severity === "high"
+                    ? "border-red-300 bg-red-50/60"
+                    : r.severity === "medium"
+                      ? "border-amber-300 bg-amber-50/40"
+                      : "border-blue-200 bg-blue-50/30")
+                }
+              >
+                <div className="flex items-start gap-2">
+                  {r.severity === "high" ? (
+                    <AlertCircle className="h-4 w-4 text-red-700 mt-0.5 shrink-0" />
+                  ) : r.severity === "medium" ? (
+                    <AlertTriangle className="h-4 w-4 text-amber-700 mt-0.5 shrink-0" />
+                  ) : (
+                    <Info className="h-4 w-4 text-blue-700 mt-0.5 shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0 text-xs">
+                    <div className="font-semibold text-sm">{r.title}</div>
+                    <p className="text-muted-foreground mt-0.5">{r.body}</p>
+                    <p className="italic mt-1">💡 {r.mitigation}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {flags.length > 0 && (
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-2">
+              🚩 Champs signalés à revoir ({flags.length})
+            </div>
+            <div className="rounded border bg-card divide-y">
+              {flags.map(([path, v]) => (
+                <div key={path} className="p-2 text-xs">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="font-mono text-[11px]">{path}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      Par {v.flagged?.by} · {v.flagged?.date ? new Date(v.flagged.date).toLocaleDateString("fr-FR") : ""}
+                    </span>
+                  </div>
+                  {v.flagged?.reason && (
+                    <p className="italic text-muted-foreground mt-1">{v.flagged.reason}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

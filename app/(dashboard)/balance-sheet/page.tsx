@@ -64,13 +64,24 @@ export default function BalanceSheetPage() {
     const slice = result.monthly.slice(0, monthsToEnd);
     const bondPrincipalRepaid = slice.reduce((s, m) => s + m.bondPrincipalRepay, 0);
     const loanPrincipalRepaid = slice.reduce((s, m) => s + m.loanPrincipalRepay, 0);
-    const dette =
+    const capitalizedCum = slice.reduce((s, m) => s + (m.capitalizedInterest ?? 0), 0);
+    // Dette = principal initial - principal remboursé + intérêts capitalisés (PIK)
+    const dette = Math.max(
+      0,
       (params.financing.bonds ?? []).reduce((s, b) => s + b.principal, 0) -
-      bondPrincipalRepaid +
-      (params.financing.loans ?? []).reduce((s, l) => s + l.principal, 0) -
-      loanPrincipalRepaid;
+        bondPrincipalRepaid +
+        capitalizedCum +
+        (params.financing.loans ?? []).reduce((s, l) => s + l.principal, 0) -
+        loanPrincipalRepaid
+    );
 
-    const totalPassif = capitauxPropres + Math.max(0, dette);
+    // Dettes courantes: TVA collectée non encore reversée (cumul vatNetPayable - vatCashOut)
+    const vatPayable = Math.max(
+      0,
+      slice.reduce((s, m) => s + (m.vatNetPayable - m.vatCashOut), 0)
+    );
+
+    const totalPassif = capitauxPropres + dette + vatPayable;
     const ecart = totalActif - totalPassif;
 
     return {
@@ -86,7 +97,8 @@ export default function BalanceSheetPage() {
       capitauxPropres,
       cumNetIncome,
       equityRaised,
-      dette: Math.max(0, dette),
+      dette,
+      vatPayable,
       totalPassif,
       ecart,
     };
