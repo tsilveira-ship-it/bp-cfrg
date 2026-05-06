@@ -7,6 +7,7 @@ import {
   equityInvestorReturn,
   bondInvestorReturn,
   ltvCac,
+  ltvByTier,
   npv,
   paybackPeriodMonths,
 } from "@/lib/metrics";
@@ -48,6 +49,8 @@ export default function InvestorMetricsPage() {
   const npvOp = npv(operatingCF, discountRate);
   const paybackMo = paybackPeriodMonths(operatingCF);
   const ltv = ltvCac(params, result, retentionMonths);
+  const ltvTiers = ltvByTier(params, retentionMonths);
+  const hasTierChurnOverride = params.subs.tiers.some((t) => t.monthlyChurnPct !== undefined);
 
   // Bond holders IRR
   const bondReturns = (params.financing.bonds ?? []).map((b) => {
@@ -355,6 +358,54 @@ export default function InvestorMetricsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            <InfoLabel label="LTV" /> par tier d&apos;abonnement
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            {hasTierChurnOverride
+              ? "Tiers avec churn override. Rétention différenciée → LTV différenciée."
+              : "Tous tiers utilisent le churn global. Définir un override par tier sur /parameters."}
+          </p>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Tier</TableHead>
+                <TableHead className="text-right">Prix TTC</TableHead>
+                <TableHead className="text-right">Mix</TableHead>
+                <TableHead className="text-right">Churn / mo</TableHead>
+                <TableHead className="text-right">Rétention</TableHead>
+                <TableHead className="text-right">LTV</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {ltvTiers.map((t) => (
+                <TableRow key={t.tierId}>
+                  <TableCell className="font-medium">{t.tierName}</TableCell>
+                  <TableCell className="text-right">{fmtCurrency(t.priceTTC, { decimals: 2 })}</TableCell>
+                  <TableCell className="text-right">{fmtPct(t.mixPct)}</TableCell>
+                  <TableCell className="text-right font-mono">
+                    {fmtPct(t.monthlyChurnPct, 2)}
+                  </TableCell>
+                  <TableCell className="text-right font-mono">
+                    {t.monthlyChurnPct > 0 ? `${t.avgRetentionMonths.toFixed(0)} mo` : "∞"}
+                  </TableCell>
+                  <TableCell className="text-right font-mono font-bold">
+                    {fmtCurrency(t.ltv)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <p className="text-[10px] text-muted-foreground mt-3">
+            LTV = prix TTC × (1 / churn). Source : <code>lib/metrics.ts:ltvByTier</code>.
+          </p>
+        </CardContent>
+      </Card>
 
       {bondReturns.length > 0 && (
         <Card>

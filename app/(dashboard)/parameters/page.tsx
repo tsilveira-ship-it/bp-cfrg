@@ -172,9 +172,13 @@ export default function ParametersPage() {
                 {params.subs.tiers.map((tier, idx) => {
                   const vatDivisor = 1 + (params.subs.vatRate ?? 0);
                   const priceHT = tier.monthlyPrice / vatDivisor;
+                  const fallbackChurn = params.subs.monthlyChurnPct ?? 0;
+                  const tierChurn = tier.monthlyChurnPct ?? fallbackChurn;
+                  const tierChurnDefined = tier.monthlyChurnPct !== undefined;
+                  const retentionMonths = tierChurn > 0 ? 1 / tierChurn : null;
                   return (
                     <div key={tier.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end p-3 border rounded-md bg-muted/30">
-                      <div className="md:col-span-4">
+                      <div className="md:col-span-3">
                         <Label className="text-xs">Nom</Label>
                         <Input
                           value={tier.name}
@@ -208,9 +212,9 @@ export default function ParametersPage() {
                           }
                         />
                       </div>
-                      <div className="md:col-span-2">
-                        <Label className="text-xs text-muted-foreground">Prix HT (€)</Label>
-                        <div className="h-9 px-3 flex items-center rounded-md border bg-muted/40 text-sm font-mono">
+                      <div className="md:col-span-1">
+                        <Label className="text-xs text-muted-foreground">HT</Label>
+                        <div className="h-9 px-2 flex items-center rounded-md border bg-muted/40 text-xs font-mono">
                           {priceHT.toFixed(2)}
                         </div>
                       </div>
@@ -233,7 +237,74 @@ export default function ParametersPage() {
                           }
                         />
                       </div>
-                      <div className="md:col-span-2 text-right">
+                      <div className="md:col-span-3">
+                        <Label className="text-xs">
+                          Churn / mois (%){" "}
+                          {!tierChurnDefined ? (
+                            <span className="text-[10px] text-muted-foreground">(global)</span>
+                          ) : null}
+                        </Label>
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex-1">
+                            <Input
+                              type="number"
+                              step="0.1"
+                              value={(tierChurn * 100).toFixed(2)}
+                              onChange={(e) =>
+                                setParams((p) => ({
+                                  ...p,
+                                  subs: {
+                                    ...p.subs,
+                                    tiers: p.subs.tiers.map((t, i) =>
+                                      i === idx ? { ...t, monthlyChurnPct: (parseFloat(e.target.value) || 0) / 100 } : t
+                                    ),
+                                  },
+                                }))
+                              }
+                              className="pr-7"
+                              title={
+                                tierChurnDefined
+                                  ? `Override tier — rétention ${retentionMonths ? retentionMonths.toFixed(0) + " mois" : "∞"}`
+                                  : `Hérité du churn global (${(fallbackChurn * 100).toFixed(2)}%)`
+                              }
+                            />
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                              %
+                            </span>
+                          </div>
+                          {tierChurnDefined ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-9 px-2 text-[10px]"
+                              title="Retirer override, retomber sur churn global"
+                              onClick={() =>
+                                setParams((p) => ({
+                                  ...p,
+                                  subs: {
+                                    ...p.subs,
+                                    tiers: p.subs.tiers.map((t, i) => {
+                                      if (i !== idx) return t;
+                                      const { monthlyChurnPct: _drop, ...rest } = t;
+                                      return rest;
+                                    }),
+                                  },
+                                }))
+                              }
+                            >
+                              ×
+                            </Button>
+                          ) : null}
+                        </div>
+                        {retentionMonths ? (
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            Rétention ~{retentionMonths.toFixed(0)} mois
+                          </p>
+                        ) : (
+                          <p className="text-[10px] text-muted-foreground mt-0.5">Pas de churn</p>
+                        )}
+                      </div>
+                      <div className="md:col-span-1 text-right">
                         <Button
                           variant="ghost"
                           size="sm"

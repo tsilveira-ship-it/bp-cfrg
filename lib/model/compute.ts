@@ -285,6 +285,76 @@ export function solveAcquisitionsFromNetTarget(netTarget: number, monthlyChurnPc
   return netTarget * monthlyChurnPct;
 }
 
+/**
+ * Niveau 2 — Décomposition du count[m] global par tier.
+ * Si aucun tier ne définit son propre churn, les counts par tier sont simplement
+ * count[m] × tier.mixPct (mix statique).
+ *
+ * Si au moins un tier a un churn override, chaque tier suit son propre cohort :
+ *   tierCount[i][m] = Σ_{k=0..m} acquisitions[k] × acqMix[i] × (1 - tierChurn[i])^(m-k)
+ *
+ * Retourne { perTier: number[][] } où perTier[i] = série mensuelle pour tier i.
+ */
+export function monthlySubsCountByTier(
+  p: ModelParams,
+  horizonMonths: number
+): { perTier: number[][]; total: number[] } {
+  const tiers = p.subs.tiers;
+  const total = monthlySubsCount(p, horizonMonths);
+  const hasTierChurn = tiers.some((t) => t.monthlyChurnPct !== undefined);
+  const useCohort = p.subs.cohortModel?.enabled === true;
+
+  // Cas simple : pas de churn par tier → mix statique.
+  if (!hasTierChurn) {
+    const perTier = tiers.map((t) => total.map((c) => c * t.mixPct));
+    return { perTier, total };
+  }
+
+  // Cas tier-level — recalcul par tier.
+  const acq = monthlyAcquisitions(p, horizonMonths);
+  const fallbackChurn = p.subs.monthlyChurnPct ?? 0;
+
+  const perTier = tiers.map((tier) => {
+    const tierChurn = tier.monthlyChurnPct ?? fallbackChurn;
+    const acqMix = tier.acquisitionMixPct ?? tier.mixPct;
+    const counts = new Array<number>(horizonMonths).fill(0);
+    if (useCohort) {
+      for (let m = 0; m < horizonMonths; m++) {
+        let sum = 0;
+        for (let k = 0; k <= m; k++) {
+          sum += acq[k] * acqMix * Math.pow(1 - tierChurn, m - k);
+        }
+        counts[m] = sum;
+      }
+    } else {
+      // Mode NET : on garde mix proportionnel mais on annote le fait que le tier
+      // suit sa propre dynamique (utile pour LTV — on ne ré-écrit pas le NET total).
+      for (let m = 0; m < horizonMonths; m++) {
+        counts[m] = total[m] * tier.mixPct;
+      }
+    }
+    return counts;
+  });
+
+  // Si cohort actif et tiers ont des churns différents, le total recalculé peut diverger
+  // du `total` de top-level (qui utilise un churn unique). On préfère retourner les
+  // tiers exacts et un total = somme tiers.
+  if (useCohort && hasTierChurn) {
+    const newTotal = new Array<number>(horizonMonths).fill(0);
+    for (let m = 0; m < horizonMonths; m++) {
+      for (let i = 0; i < perTier.length; i++) newTotal[m] += perTier[i][m];
+    }
+    return { perTier, total: newTotal };
+  }
+
+  return { perTier, total };
+}
+
+/** Helper export pour modules consommateurs (UI, métriques). */
+export function effectiveTierChurn(tier: { monthlyChurnPct?: number }, fallback: number): number {
+  return tier.monthlyChurnPct ?? fallback;
+}
+
 function monthlySubsRevenue(p: ModelParams, counts: number[]): number[] {
   const basePriceTTC = avgSubPrice(p.subs.tiers);
   const vatDivisor = 1 + (p.subs.vatRate ?? 0);
@@ -294,6 +364,25 @@ function monthlySubsRevenue(p: ModelParams, counts: number[]): number[] {
     const priceFactor = Math.pow(1 + p.subs.priceIndexPa, fy);
     return c * basePriceHT * priceFactor;
   });
+}
+
+/**
+ * Niveau 2 — revenu mensuel calculé par tier (utilisé quand cohort + tier churn actifs).
+ * Préserve l'indexation tarifaire annuelle.
+ */
+function monthlySubsRevenueByTier(p: ModelParams, perTier: number[][]): number[] {
+  const vatDivisor = 1 + (p.subs.vatRate ?? 0);
+  const horizonMonths = perTier[0]?.length ?? 0;
+  const out = new Array<number>(horizonMonths).fill(0);
+  for (let m = 0; m < horizonMonths; m++) {
+    const fy = Math.floor(m / FY_LEN);
+    const priceFactor = Math.pow(1 + p.subs.priceIndexPa, fy);
+    for (let i = 0; i < p.subs.tiers.length; i++) {
+      const priceHT = p.subs.tiers[i].monthlyPrice / vatDivisor;
+      out[m] += perTier[i][m] * priceHT * priceFactor;
+    }
+  }
+  return out;
 }
 
 function monthlyLegacy(p: ModelParams, horizonMonths: number) {
@@ -417,8 +506,20 @@ export function computeModel(p: ModelParams): ModelResult {
   );
   const H = tl.horizonMonths;
 
-  const subsCount = monthlySubsCount(p, H);
-  const subsRevenue = monthlySubsRevenue(p, subsCount);
+  // Niveau 2 — si tier-level churn actif ET cohort actif, on calcule en per-tier
+  // (compte total + revenu pondéré par prix de chaque tier).
+  const useCohort = p.subs.cohortModel?.enabled === true;
+  const hasTierChurn = p.subs.tiers.some((t) => t.monthlyChurnPct !== undefined);
+  let subsCount: number[];
+  let subsRevenue: number[];
+  if (useCohort && hasTierChurn) {
+    const byTier = monthlySubsCountByTier(p, H);
+    subsCount = byTier.total;
+    subsRevenue = monthlySubsRevenueByTier(p, byTier.perTier);
+  } else {
+    subsCount = monthlySubsCount(p, H);
+    subsRevenue = monthlySubsRevenue(p, subsCount);
+  }
   const legacy = monthlyLegacy(p, H);
   const prest = monthlyPrestations(p, H);
   const merch = monthlyMerch(p, H);

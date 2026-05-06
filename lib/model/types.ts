@@ -124,7 +124,21 @@ export type SubscriptionTier = {
   id: string;
   name: string;
   monthlyPrice: number;
+  /** Part du tier dans le mix de revenus (somme = 1.0). */
   mixPct: number;
+  /**
+   * Churn mensuel spécifique au tier (override). Si undefined, fallback sur
+   * `subs.monthlyChurnPct` global. Permet de modéliser des rétentions
+   * différenciées : illimité ~1.5%/mo, 4 séances ~4%/mo, etc.
+   */
+  monthlyChurnPct?: number;
+  /**
+   * Part du tier dans le mix d'acquisitions (somme = 1.0). Si undefined,
+   * fallback sur `mixPct`. Permet de modéliser une trajectoire où le mix
+   * d'acquisition diffère du mix de stock (ex : on acquiert plus de drop-in
+   * mais ils churnent vite).
+   */
+  acquisitionMixPct?: number;
 };
 
 export type SalaryCategory = "cadre" | "non-cadre" | "apprenti" | "stagiaire";

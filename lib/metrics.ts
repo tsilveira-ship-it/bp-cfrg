@@ -129,6 +129,34 @@ export function bondInvestorReturn(
   return { invested: bondPrincipal, totalReturn, multiple, irr: annualIrr };
 }
 
+// Niveau 2 — LTV par tier (utilise tier.monthlyChurnPct override si défini).
+export type TierLtvEntry = {
+  tierId: string;
+  tierName: string;
+  priceTTC: number;
+  mixPct: number;
+  monthlyChurnPct: number;
+  avgRetentionMonths: number;
+  ltv: number;
+};
+
+export function ltvByTier(params: ModelParams, fallbackRetention = 24): TierLtvEntry[] {
+  const fallbackChurn = params.subs.monthlyChurnPct ?? 0;
+  return params.subs.tiers.map((t) => {
+    const churn = t.monthlyChurnPct ?? fallbackChurn;
+    const retention = churn > 0 ? 1 / churn : fallbackRetention;
+    return {
+      tierId: t.id,
+      tierName: t.name,
+      priceTTC: t.monthlyPrice,
+      mixPct: t.mixPct,
+      monthlyChurnPct: churn,
+      avgRetentionMonths: retention,
+      ltv: t.monthlyPrice * retention,
+    };
+  });
+}
+
 // LTV simplifié: prix moyen TTC × durée moyenne d'abonnement (mois).
 // Si `monthlyChurnPct` > 0, durée moyenne = 1 / churn (formule analytique cohort exponentiel).
 // Sinon fallback override `avgRetentionMonths` (24 mois par défaut).
