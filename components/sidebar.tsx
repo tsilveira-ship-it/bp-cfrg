@@ -139,15 +139,21 @@ const GROUPS: Group[] = [
 const COLLAPSED_KEY = "bp-sidebar-collapsed";
 const MODE_KEY = "bp-sidebar-mode";
 
+// Cache module-level pour stabiliser la référence retournée par useSyncExternalStore
+// (sinon getSnapshot retourne un nouveau {} à chaque render → re-render infini).
+const EMPTY_COLLAPSED: Record<string, boolean> = Object.freeze({}) as Record<string, boolean>;
+let collapsedCache: Record<string, boolean> | null = null;
+
 function readCollapsed(): Record<string, boolean> {
-  if (typeof window === "undefined") return {};
+  if (collapsedCache !== null) return collapsedCache;
+  if (typeof window === "undefined") return EMPTY_COLLAPSED;
   try {
     const raw = window.localStorage.getItem(COLLAPSED_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw) as Record<string, boolean>;
+    collapsedCache = raw ? (JSON.parse(raw) as Record<string, boolean>) : EMPTY_COLLAPSED;
   } catch {
-    return {};
+    collapsedCache = EMPTY_COLLAPSED;
   }
+  return collapsedCache;
 }
 
 function readMode(): Mode {
@@ -175,7 +181,7 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const collapsed = useSyncExternalStore(
     () => () => {},
     () => readCollapsed(),
-    () => ({} as Record<string, boolean>)
+    () => EMPTY_COLLAPSED
   );
   const initialMode = useSyncExternalStore(
     () => () => {},
