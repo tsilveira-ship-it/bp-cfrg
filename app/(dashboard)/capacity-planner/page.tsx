@@ -6,6 +6,8 @@ import {
   CheckCircle2,
   Plus,
   Trash2,
+  TrendingDown,
+  UserCheck,
   UsersRound,
   Wand2,
 } from "lucide-react";
@@ -25,13 +27,20 @@ import {
 import { useModelStore } from "@/lib/store";
 import { computeModel } from "@/lib/model/compute";
 import {
+  compareCdiVsFreelance,
   computeAllocatedHours,
   computeMonthlyCapacitySlots,
   computeMonthlyHours,
   computeWeeklyHours,
   DEFAULT_AREAS,
+  DEFAULT_PRODUCTIVE_RATIO,
   DEFAULT_SCHEDULE,
+  findBreakEvenHours,
   freelanceCostFromAllocations,
+  hoursToFte,
+  HOURS_PER_FTE_THEORETICAL,
+  type CdiHypothesis,
+  type FreelanceHypothesis,
 } from "@/lib/capacity-planner";
 import type {
   CoachAllocation,
@@ -682,6 +691,12 @@ export default function CapacityPlannerPage() {
         </CardContent>
       </Card>
 
+      {/* Section ETP & Comparaison CDI vs Freelance */}
+      <FteComparisonSection
+        perFy={perFy}
+        fyLabels={fyLabels}
+      />
+
       {/* Sync */}
       <Card className="border-blue-300 bg-blue-50/30">
         <CardContent className="pt-5 flex flex-wrap items-start gap-3">
@@ -732,5 +747,311 @@ function Stat({ label, value, suffix }: { label: string; value: number; suffix?:
         {suffix && <span className="text-sm font-normal ml-0.5">{suffix}</span>}
       </div>
     </div>
+  );
+}
+
+type PerFy = {
+  fy: number;
+  label: string;
+  monthlyHours: number;
+  cadreHours: number;
+  freelanceHours: number;
+};
+
+function FteComparisonSection({
+  perFy,
+  fyLabels,
+}: {
+  perFy: PerFy[];
+  fyLabels: string[];
+}) {
+  const [cdi, setCdi] = useState<CdiHypothesis>({
+    monthlyGross: 3000,
+    chargesPatroPct: 0.42,
+    thirteenthMonth: false,
+    benefitsMonthly: 100,
+    productiveRatio: DEFAULT_PRODUCTIVE_RATIO,
+  });
+  const [freelance, setFreelance] = useState<FreelanceHypothesis>({
+    hourlyRate: 40,
+  });
+
+  // Calculs par FY
+  const fteData = useMemo(() => {
+    return perFy.map((d) => {
+      const cmp = compareCdiVsFreelance(d.monthlyHours, cdi, freelance);
+      const fteNeeded = hoursToFte(d.monthlyHours, cdi.productiveRatio);
+      return {
+        ...d,
+        fteNeeded,
+        cmp,
+      };
+    });
+  }, [perFy, cdi, freelance]);
+
+  const breakEven = useMemo(() => findBreakEvenHours(cdi, freelance, 600, 5), [cdi, freelance]);
+
+  // Données pour chart break-even (courbes CDI vs Freelance)
+  const breakEvenChart = useMemo(() => {
+    const out: { hours: number; CDI: number; Freelance: number }[] = [];
+    const productivePerFte = HOURS_PER_FTE_THEORETICAL * cdi.productiveRatio;
+    const cdiCostPerFte =
+      (cdi.thirteenthMonth ? cdi.monthlyGross * 13 / 12 : cdi.monthlyGross) *
+        (1 + cdi.chargesPatroPct) +
+      cdi.benefitsMonthly;
+    for (let h = 20; h <= 400; h += 20) {
+      const cdiCost = Math.ceil(h / productivePerFte) * cdiCostPerFte;
+      const freelanceCost = h * freelance.hourlyRate;
+      out.push({ hours: h, CDI: Math.round(cdiCost), Freelance: Math.round(freelanceCost) });
+    }
+    return out;
+  }, [cdi, freelance]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <UserCheck className="h-4 w-4 text-[#D32F2F]" />
+          5. Besoin ETP &amp; comparaison CDI vs Freelance
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Traduit les heures de cours en équivalents temps plein et compare le coût mensuel d&apos;un
+          modèle 100% CDI vs 100% Freelance pour le volume horaire de chaque FY.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Hypothèses */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 border rounded bg-muted/20">
+          <div>
+            <Label className="text-xs">Brut mensuel CDI (€)</Label>
+            <Input
+              type="number"
+              value={cdi.monthlyGross}
+              onChange={(e) => setCdi({ ...cdi, monthlyGross: parseFloat(e.target.value) || 0 })}
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Coach CrossFit France: 2500-3500€ brut typique.
+            </p>
+          </div>
+          <div>
+            <Label className="text-xs">Charges patronales (%)</Label>
+            <Input
+              type="number"
+              step={0.01}
+              value={cdi.chargesPatroPct}
+              onChange={(e) => setCdi({ ...cdi, chargesPatroPct: parseFloat(e.target.value) || 0 })}
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">Cadre: ~42%, non-cadre: ~40%.</p>
+          </div>
+          <div>
+            <Label className="text-xs">Avantages mensuels (€)</Label>
+            <Input
+              type="number"
+              value={cdi.benefitsMonthly}
+              onChange={(e) => setCdi({ ...cdi, benefitsMonthly: parseFloat(e.target.value) || 0 })}
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Mutuelle + tickets resto + transport.
+            </p>
+          </div>
+          <div>
+            <Label className="text-xs">Tarif freelance (€/h)</Label>
+            <Input
+              type="number"
+              value={freelance.hourlyRate}
+              onChange={(e) => setFreelance({ hourlyRate: parseFloat(e.target.value) || 0 })}
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">Coach freelance Paris: 35-50€/h.</p>
+          </div>
+          <div>
+            <Label className="text-xs">Ratio productif</Label>
+            <Input
+              type="number"
+              step={0.05}
+              min={0.5}
+              max={1}
+              value={cdi.productiveRatio}
+              onChange={(e) =>
+                setCdi({ ...cdi, productiveRatio: parseFloat(e.target.value) || 0.9 })
+              }
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">
+              0.90 = 137h productives/mois (CP + maladie + formation déduits).
+            </p>
+          </div>
+          <div className="flex items-center gap-2 pt-5">
+            <input
+              type="checkbox"
+              id="th-13"
+              checked={cdi.thirteenthMonth}
+              onChange={(e) => setCdi({ ...cdi, thirteenthMonth: e.target.checked })}
+            />
+            <Label htmlFor="th-13" className="text-xs cursor-pointer">
+              13e mois
+            </Label>
+          </div>
+        </div>
+
+        {/* Recommandation */}
+        <div
+          className={
+            "rounded border p-3 " +
+            (breakEven === null
+              ? "bg-emerald-50/40 border-emerald-300"
+              : "bg-amber-50/40 border-amber-300")
+          }
+        >
+          <div className="flex items-start gap-2">
+            <TrendingDown className="h-5 w-5 mt-0.5 shrink-0" />
+            <div className="text-sm">
+              <div className="font-semibold">
+                Point de bascule CDI &lt; Freelance: {breakEven === null ? "jamais" : `~${breakEven}h/mois`}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {breakEven === null
+                  ? `Avec ces hypothèses, le freelance reste toujours moins cher (le tarif freelance × 1 ETP > coût CDI). Tu peux te poser la question d'embaucher uniquement si tu veux fidéliser le coach.`
+                  : `À partir de ${breakEven}h/mois, le coût CDI passe sous le coût freelance équivalent. En-dessous, freelance reste plus économique. (1 ETP = ${(HOURS_PER_FTE_THEORETICAL * cdi.productiveRatio).toFixed(0)}h productives/mois.)`}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Tableau par FY */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-muted/30">
+              <tr>
+                <th className="text-left p-2">FY</th>
+                <th className="text-right p-2">Heures/mois</th>
+                <th className="text-right p-2">ETP requis</th>
+                <th className="text-right p-2">CDI (Nb × coût)</th>
+                <th className="text-right p-2">Coût CDI/mois</th>
+                <th className="text-right p-2">Coût Freelance/mois</th>
+                <th className="text-right p-2">Δ (CDI - FL)</th>
+                <th className="text-left p-2">Reco</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fteData.map((d) => (
+                <tr key={d.fy} className="border-t">
+                  <td className="p-2 font-mono">{d.label}</td>
+                  <td className="p-2 text-right font-mono">{Math.round(d.monthlyHours)}h</td>
+                  <td className="p-2 text-right font-mono">
+                    {d.fteNeeded.toFixed(2)} ETP
+                  </td>
+                  <td className="p-2 text-right text-muted-foreground">
+                    {d.cmp.cdiFteCount} × {Math.round(d.cmp.cdiCost / Math.max(1, d.cmp.cdiFteCount)).toLocaleString("fr-FR")}€
+                  </td>
+                  <td className="p-2 text-right font-mono">
+                    {Math.round(d.cmp.cdiCost).toLocaleString("fr-FR")}€
+                  </td>
+                  <td className="p-2 text-right font-mono">
+                    {Math.round(d.cmp.freelanceCost).toLocaleString("fr-FR")}€
+                  </td>
+                  <td
+                    className={
+                      "p-2 text-right font-mono font-semibold " +
+                      (d.cmp.delta < 0 ? "text-emerald-700" : d.cmp.delta > 0 ? "text-red-700" : "")
+                    }
+                  >
+                    {d.cmp.delta >= 0 ? "+" : ""}
+                    {Math.round(d.cmp.delta).toLocaleString("fr-FR")}€
+                  </td>
+                  <td className="p-2">
+                    {d.cmp.recommendation === "cdi" ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                        ✓ CDI
+                      </span>
+                    ) : d.cmp.recommendation === "freelance" ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 text-[10px] font-bold">
+                        ✓ Freelance
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px]">
+                        Égalité
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[10px] text-muted-foreground italic">
+          Coût CDI calculé en arrondissant au nombre d&apos;ETP entiers nécessaires (taille minimale
+          d&apos;équipe). Inclut charges patronales + avantages. La sous-utilisation des CDI fait
+          monter le coût horaire effectif si la demande est faible.
+        </p>
+
+        {/* Chart break-even */}
+        <div>
+          <div className="text-xs font-semibold mb-2">
+            Coût mensuel par H heures/mois — courbe de bascule
+          </div>
+          <ResponsiveContainer width="100%" height={260}>
+            <LineChart data={breakEvenChart} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+              <XAxis
+                dataKey="hours"
+                tick={{ fontSize: 11 }}
+                label={{ value: "Heures/mois", position: "insideBottom", offset: -2, fontSize: 10 }}
+              />
+              <YAxis
+                tick={{ fontSize: 11 }}
+                tickFormatter={(v) => `${(v / 1000).toFixed(0)}k€`}
+              />
+              <Tooltip
+                formatter={(v) => `${Number(v).toLocaleString("fr-FR")}€`}
+                labelFormatter={(l) => `${l}h/mois`}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Line
+                type="stepAfter"
+                dataKey="CDI"
+                stroke="#16a34a"
+                strokeWidth={2}
+                dot={false}
+                name="CDI (par paliers d'ETP)"
+              />
+              <Line
+                type="monotone"
+                dataKey="Freelance"
+                stroke="#3b82f6"
+                strokeWidth={2}
+                dot={false}
+                name="Freelance (linéaire)"
+              />
+            </LineChart>
+          </ResponsiveContainer>
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Ligne verte (CDI) = paliers car on doit embaucher 1, 2, 3 ETP entiers. Bleue (Freelance) = linéaire.
+            La différence est l&apos;économie potentielle au volume actuel.
+          </p>
+        </div>
+
+        {/* Note méthodo */}
+        <div className="rounded border p-3 bg-muted/20 text-[11px] text-muted-foreground">
+          <div className="font-semibold text-foreground mb-1">Au-delà du coût brut</div>
+          <ul className="list-disc pl-5 space-y-0.5">
+            <li>
+              <b>CDI</b> : engagement long terme, fidélité, qualité constante, mais rigidité (rupture
+              conventionnelle, congés à couvrir, cotisation prévoyance).
+            </li>
+            <li>
+              <b>Freelance</b> : flexibilité totale, ajuste vite à la demande, mais tu perds l&apos;exclusivité
+              et la disponibilité (le coach peut être pris ailleurs).
+            </li>
+            <li>
+              <b>Mix optimal recommandé</b> : 1 ETP CDI sur la baseline (cours fixes hebdo) +
+              freelance pour pics + remplacement.
+            </li>
+            <li>
+              Ce calcul ne tient pas compte du <b>CIR / crédit apprentissage</b> (10-30%) ni des aides
+              à l&apos;embauche.
+            </li>
+          </ul>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
