@@ -120,6 +120,21 @@ export type FieldNote = {
   date: string;           // ISO timestamp dernière édition
 };
 
+/**
+ * Niveau 6 — Canal d'acquisition (brochure / site web / ResaWod / referral / drop-in).
+ * Permet de modéliser CAC différencié par canal et croissance distincte.
+ */
+export type AcquisitionChannel = {
+  id: string;
+  name: string;
+  /** Part du mix d'acquisition (somme = 1.0). */
+  mixPct: number;
+  /** CAC mensuel par acquisition pour ce canal (€). Peut être négatif si canal payant en amont. */
+  cacEur: number;
+  /** Croissance annuelle de la part de mix (en valeur absolue ou relative selon mode UI). */
+  growthPa: number;
+};
+
 /** Niveau 4 — cohorte legacy avec dynamique propre. */
 export type LegacyCohort = {
   id: string;
@@ -138,6 +153,12 @@ export type SubscriptionTier = {
   monthlyPrice: number;
   /** Part du tier dans le mix de revenus (somme = 1.0). */
   mixPct: number;
+  /**
+   * Niveau 6 — mix évolutif par FY. Length = horizonYears. Si défini, override mixPct
+   * mois par mois (interpolation linéaire intra-FY). Permet de modéliser premium tier
+   * qui croît avec maturité.
+   */
+  mixPctByFy?: number[];
   /**
    * Churn mensuel spécifique au tier (override). Si undefined, fallback sur
    * `subs.monthlyChurnPct` global. Permet de modéliser des rétentions
@@ -327,6 +348,24 @@ export type ModelParams = {
     growthRates: number[];   // length = horizonYears - 1, growth from prev FY end
     priceIndexPa: number;
     seasonality?: number[];           // 12 multipliers (Sept..Août). Default tous 1.
+    /**
+     * Niveau 6 — saisonnalité différenciée pour acquisition vs churn.
+     * Si défini, override `seasonality` pour chacun de ces flux.
+     */
+    seasonalityAcquisition?: number[];
+    seasonalityChurn?: number[];
+    /**
+     * Niveau 6 — % moyen de la base en pause/freeze d'abonnement à un instant T.
+     * Membres en pause ne paient pas mais ne sont pas churnés. Affecte revenu seulement.
+     */
+    avgMonthlyPausePct?: number;
+    /**
+     * Niveau 6 — canaux d'acquisition. Si défini, somme(mixPct) doit = 1.
+     * Les acquisitions[m] sont distribuées selon le mix, et CAC mensuel agrégé
+     * = Σ(canal.cacEur × canal.mixPct × acquisitions[m]).
+     * Sert principalement pour analyse CAC et dimensionnement budget marketing.
+     */
+    acquisitionChannels?: AcquisitionChannel[];
     monthlyChurnPct?: number;         // % membres perdu chaque mois (cohort retention)
     /**
      * Niveau 5 — Funnel Bilan → conversion abo (modèle CRM réel).

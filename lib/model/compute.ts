@@ -193,10 +193,15 @@ function monthlySubsCountCohort(p: ModelParams, horizonMonths: number): number[]
     return monthlySubsCountNetTarget(p, horizonMonths);
   }
   const churn = p.subs.monthlyChurnPct ?? 0;
+  // Niveau 6 — saisonnalité différenciée acquisition (priorité : subs.seasonalityAcquisition > cohortModel.acquisitionSeasonality > subs.seasonality)
   const acquisitionSeasonality =
-    cm.acquisitionSeasonality && cm.acquisitionSeasonality.length === 12
+    (p.subs.seasonalityAcquisition && p.subs.seasonalityAcquisition.length === 12
+      ? p.subs.seasonalityAcquisition
+      : cm.acquisitionSeasonality && cm.acquisitionSeasonality.length === 12
       ? cm.acquisitionSeasonality
-      : (p.subs.seasonality && p.subs.seasonality.length === 12 ? p.subs.seasonality : null);
+      : p.subs.seasonality && p.subs.seasonality.length === 12
+      ? p.subs.seasonality
+      : null);
 
   // 1. Build acquisitions[m]
   const acq = new Array<number>(horizonMonths).fill(0);
@@ -315,9 +320,13 @@ export function monthlyAcquisitions(p: ModelParams, horizonMonths: number): numb
   if (useCohort && p.subs.cohortModel) {
     const cm = p.subs.cohortModel;
     const acquisitionSeasonality =
-      cm.acquisitionSeasonality && cm.acquisitionSeasonality.length === 12
+      (p.subs.seasonalityAcquisition && p.subs.seasonalityAcquisition.length === 12
+        ? p.subs.seasonalityAcquisition
+        : cm.acquisitionSeasonality && cm.acquisitionSeasonality.length === 12
         ? cm.acquisitionSeasonality
-        : (p.subs.seasonality && p.subs.seasonality.length === 12 ? p.subs.seasonality : null);
+        : p.subs.seasonality && p.subs.seasonality.length === 12
+        ? p.subs.seasonality
+        : null);
     const acq = new Array<number>(horizonMonths).fill(0);
     const a0 = cm.acquisitionStart;
     const a1 = cm.acquisitionEnd;
@@ -433,14 +442,50 @@ export function effectiveTierChurn(tier: { monthlyChurnPct?: number }, fallback:
   return tier.monthlyChurnPct ?? fallback;
 }
 
+/**
+ * Niveau 6 — CAC moyen pondéré par canal d'acquisition.
+ * Si pas de canaux définis, retourne null (utiliser CAC implicite marketing/acquisitions).
+ */
+export function weightedChannelCac(p: ModelParams): number | null {
+  const channels = p.subs.acquisitionChannels;
+  if (!channels || channels.length === 0) return null;
+  return channels.reduce((s, c) => s + c.cacEur * c.mixPct, 0);
+}
+
+/**
+ * Niveau 6 — résolution du mix tier au mois m (mixPctByFy si défini, sinon mixPct statique).
+ * Interpolation linéaire intra-FY entre fy et fy+1.
+ */
+export function effectiveTierMix(
+  tier: { mixPct: number; mixPctByFy?: number[] },
+  m: number
+): number {
+  if (!tier.mixPctByFy || tier.mixPctByFy.length === 0) return tier.mixPct;
+  const fy = Math.floor(m / FY_LEN);
+  const moy = m % FY_LEN;
+  const v0 = tier.mixPctByFy[fy] ?? tier.mixPct;
+  const v1 = tier.mixPctByFy[fy + 1] ?? v0;
+  return v0 + ((v1 - v0) * moy) / (FY_LEN - 1);
+}
+
 function monthlySubsRevenue(p: ModelParams, counts: number[]): number[] {
-  const basePriceTTC = avgSubPrice(p.subs.tiers);
   const vatDivisor = 1 + (p.subs.vatRate ?? 0);
-  const basePriceHT = basePriceTTC / vatDivisor;
+  const pausePct = p.subs.avgMonthlyPausePct ?? 0;
+  const hasMixEvolution = p.subs.tiers.some((t) => t.mixPctByFy && t.mixPctByFy.length > 0);
   return counts.map((c, m) => {
     const fy = Math.floor(m / FY_LEN);
     const priceFactor = Math.pow(1 + p.subs.priceIndexPa, fy);
-    return c * basePriceHT * priceFactor;
+    let priceTTC: number;
+    if (hasMixEvolution) {
+      // Recompute price avec mix évolutif au mois m
+      priceTTC = p.subs.tiers.reduce((s, t) => s + t.monthlyPrice * effectiveTierMix(t, m), 0);
+    } else {
+      priceTTC = avgSubPrice(p.subs.tiers);
+    }
+    const priceHT = priceTTC / vatDivisor;
+    // Pause : membres en pause ne paient pas (revenu seulement, pas le count)
+    const payingCount = c * (1 - pausePct);
+    return payingCount * priceHT * priceFactor;
   });
 }
 
@@ -450,6 +495,7 @@ function monthlySubsRevenue(p: ModelParams, counts: number[]): number[] {
  */
 function monthlySubsRevenueByTier(p: ModelParams, perTier: number[][]): number[] {
   const vatDivisor = 1 + (p.subs.vatRate ?? 0);
+  const pausePct = p.subs.avgMonthlyPausePct ?? 0;
   const horizonMonths = perTier[0]?.length ?? 0;
   const out = new Array<number>(horizonMonths).fill(0);
   for (let m = 0; m < horizonMonths; m++) {
@@ -457,7 +503,8 @@ function monthlySubsRevenueByTier(p: ModelParams, perTier: number[][]): number[]
     const priceFactor = Math.pow(1 + p.subs.priceIndexPa, fy);
     for (let i = 0; i < p.subs.tiers.length; i++) {
       const priceHT = p.subs.tiers[i].monthlyPrice / vatDivisor;
-      out[m] += perTier[i][m] * priceHT * priceFactor;
+      const payingCount = perTier[i][m] * (1 - pausePct);
+      out[m] += payingCount * priceHT * priceFactor;
     }
   }
   return out;

@@ -163,6 +163,8 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
 
       <CohortModelSection params={params} setParams={setParams} />
 
+      <AdvancedSubsSection params={params} setParams={setParams} />
+
       <section>
         <div className="flex items-center justify-between mb-3">
           <div>
@@ -516,6 +518,290 @@ function CohortModelSection({
           Utile pour calibrer CAC, modéliser scénarios churn, et simuler le funnel Bilan → abo.
         </p>
       )}
+    </section>
+  );
+}
+
+function AdvancedSubsSection({
+  params,
+  setParams,
+}: {
+  params: ModelParams;
+  setParams: (updater: (p: ModelParams) => ModelParams) => void;
+}) {
+  const subs = params.subs;
+  const channels = subs.acquisitionChannels ?? [];
+  const seasAcqEnabled = !!subs.seasonalityAcquisition;
+  const seasChurnEnabled = !!subs.seasonalityChurn;
+
+  const toggleSeasAcq = (next: boolean) => {
+    setParams((p) => {
+      const baseline = p.subs.seasonality ?? [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+      return {
+        ...p,
+        subs: {
+          ...p.subs,
+          seasonalityAcquisition: next ? [...baseline] : undefined,
+        },
+      };
+    });
+  };
+
+  const toggleSeasChurn = (next: boolean) => {
+    setParams((p) => {
+      const baseline = p.subs.seasonality ?? [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+      return {
+        ...p,
+        subs: {
+          ...p.subs,
+          seasonalityChurn: next ? [...baseline] : undefined,
+        },
+      };
+    });
+  };
+
+  const updateSeasonality = (kind: "acq" | "churn", idx: number, val: number) => {
+    setParams((p) => {
+      const key = kind === "acq" ? "seasonalityAcquisition" : "seasonalityChurn";
+      const arr = [...(p.subs[key] ?? [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])];
+      arr[idx] = val;
+      return { ...p, subs: { ...p.subs, [key]: arr } };
+    });
+  };
+
+  const addChannel = () => {
+    setParams((p) => ({
+      ...p,
+      subs: {
+        ...p.subs,
+        acquisitionChannels: [
+          ...(p.subs.acquisitionChannels ?? []),
+          {
+            id: `ch_${Date.now()}`,
+            name: "Nouveau canal",
+            mixPct: 0.10,
+            cacEur: 30,
+            growthPa: 0.05,
+          },
+        ],
+      },
+    }));
+  };
+
+  const removeChannel = (id: string) => {
+    setParams((p) => ({
+      ...p,
+      subs: {
+        ...p.subs,
+        acquisitionChannels: (p.subs.acquisitionChannels ?? []).filter((c) => c.id !== id),
+      },
+    }));
+  };
+
+  const updateChannel = (id: string, patch: Partial<{ name: string; mixPct: number; cacEur: number; growthPa: number }>) => {
+    setParams((p) => ({
+      ...p,
+      subs: {
+        ...p.subs,
+        acquisitionChannels: (p.subs.acquisitionChannels ?? []).map((c) =>
+          c.id === id ? { ...c, ...patch } : c
+        ),
+      },
+    }));
+  };
+
+  const seedChannelsFromCRM = () => {
+    setParams((p) => ({
+      ...p,
+      subs: {
+        ...p.subs,
+        acquisitionChannels: [
+          { id: `ch_brochure_${Date.now()}`, name: "Brochure", mixPct: 0.63, cacEur: 25, growthPa: 0.05 },
+          { id: `ch_resawod_${Date.now() + 1}`, name: "ResaWod / drop-in", mixPct: 0.29, cacEur: -10, growthPa: 0.10 },
+          { id: `ch_siteweb_${Date.now() + 2}`, name: "Site web (SEO)", mixPct: 0.08, cacEur: 50, growthPa: 0.30 },
+        ],
+      },
+    }));
+  };
+
+  const totalChannelMix = channels.reduce((s, c) => s + c.mixPct, 0);
+  const weightedCac = channels.reduce((s, c) => s + c.cacEur * c.mixPct, 0);
+
+  return (
+    <section className="border-2 border-dashed border-muted-foreground/30 rounded-lg p-4 bg-muted/5 space-y-4">
+      <h4 className="font-heading text-sm font-semibold uppercase tracking-wider">
+        Niveau 6 — Avancé (mix évolutif, canaux, saisonnalité, pause)
+      </h4>
+
+      {/* Pause/freeze */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-t pt-3">
+        <div>
+          <Label className="text-xs">Pause/freeze moyenne (% base)</Label>
+          <div className="relative">
+            <Input
+              type="number"
+              step="0.5"
+              value={((subs.avgMonthlyPausePct ?? 0) * 100).toFixed(2)}
+              onChange={(e) =>
+                setParams((p) => ({
+                  ...p,
+                  subs: { ...p.subs, avgMonthlyPausePct: (parseFloat(e.target.value) || 0) / 100 },
+                }))
+              }
+              className="pr-7"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+              %
+            </span>
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            Membres en pause ne paient pas mais ne sont pas churnés. CrossFit typique : 2-5%.
+          </p>
+        </div>
+      </div>
+
+      {/* Saisonnalité différenciée */}
+      <div className="border-t pt-3 space-y-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-xs">Saisonnalité acquisition (override globale)</Label>
+          <Switch checked={seasAcqEnabled} onCheckedChange={toggleSeasAcq} />
+        </div>
+        {seasAcqEnabled ? (
+          <div className="grid grid-cols-6 lg:grid-cols-12 gap-1">
+            {["Sept", "Oct", "Nov", "Déc", "Janv", "Févr", "Mars", "Avr", "Mai", "Juin", "Juil", "Août"].map((mlabel, idx) => (
+              <div key={mlabel} className="space-y-0.5">
+                <Label className="text-[9px] block text-center">{mlabel}</Label>
+                <Input
+                  type="number"
+                  step="0.05"
+                  value={subs.seasonalityAcquisition?.[idx] ?? 1}
+                  onChange={(e) => updateSeasonality("acq", idx, parseFloat(e.target.value) || 0)}
+                  className="h-7 px-1 text-[10px] text-center"
+                />
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="flex items-center justify-between">
+          <Label className="text-xs">Saisonnalité churn (informatif — non appliqué V1)</Label>
+          <Switch checked={seasChurnEnabled} onCheckedChange={toggleSeasChurn} />
+        </div>
+        {seasChurnEnabled ? (
+          <div className="grid grid-cols-6 lg:grid-cols-12 gap-1">
+            {["Sept", "Oct", "Nov", "Déc", "Janv", "Févr", "Mars", "Avr", "Mai", "Juin", "Juil", "Août"].map((mlabel, idx) => (
+              <div key={mlabel} className="space-y-0.5">
+                <Label className="text-[9px] block text-center">{mlabel}</Label>
+                <Input
+                  type="number"
+                  step="0.05"
+                  value={subs.seasonalityChurn?.[idx] ?? 1}
+                  onChange={(e) => updateSeasonality("churn", idx, parseFloat(e.target.value) || 0)}
+                  className="h-7 px-1 text-[10px] text-center"
+                />
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Canaux d'acquisition */}
+      <div className="border-t pt-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-xs">Canaux d&apos;acquisition (CAC pondéré)</Label>
+            <p className="text-[10px] text-muted-foreground">
+              {channels.length > 0 ? (
+                <>
+                  Mix total :{" "}
+                  <span className={Math.abs(totalChannelMix - 1) < 0.001 ? "text-emerald-600" : "text-red-600"}>
+                    {fmtNum(totalChannelMix * 100)}%
+                  </span>
+                  {" — "}
+                  CAC pondéré : <span className="font-mono font-semibold">{weightedCac.toFixed(2)}€</span>
+                </>
+              ) : (
+                "Décompose les acquisitions par canal pour CAC différencié."
+              )}
+            </p>
+          </div>
+          <div className="flex gap-1">
+            {channels.length === 0 ? (
+              <Button variant="ghost" size="sm" onClick={seedChannelsFromCRM} className="text-[10px] h-7">
+                Preset CRM (brochure 63% / ResaWod 29% / web 8%)
+              </Button>
+            ) : null}
+            <Button variant="outline" size="sm" onClick={addChannel} className="text-[10px] h-7">
+              + Canal
+            </Button>
+          </div>
+        </div>
+        {channels.length > 0 ? (
+          <div className="space-y-1.5">
+            {channels.map((c) => (
+              <div
+                key={c.id}
+                className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end p-2 border rounded bg-background"
+              >
+                <div className="md:col-span-4">
+                  <Label className="text-[10px]">Nom</Label>
+                  <Input
+                    value={c.name}
+                    onChange={(e) => updateChannel(c.id, { name: e.target.value })}
+                    className="h-7 text-xs"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <Label className="text-[10px]">Mix (%)</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    value={(c.mixPct * 100).toFixed(1)}
+                    onChange={(e) =>
+                      updateChannel(c.id, { mixPct: (parseFloat(e.target.value) || 0) / 100 })
+                    }
+                    className="h-7 text-xs"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <Label className="text-[10px]">CAC (€)</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    value={c.cacEur}
+                    onChange={(e) =>
+                      updateChannel(c.id, { cacEur: parseFloat(e.target.value) || 0 })
+                    }
+                    className="h-7 text-xs"
+                  />
+                </div>
+                <div className="md:col-span-3">
+                  <Label className="text-[10px]">Croissance/an (%)</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    value={(c.growthPa * 100).toFixed(1)}
+                    onChange={(e) =>
+                      updateChannel(c.id, { growthPa: (parseFloat(e.target.value) || 0) / 100 })
+                    }
+                    className="h-7 text-xs"
+                  />
+                </div>
+                <div className="md:col-span-1 text-right">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-600 h-7"
+                    onClick={() => removeChannel(c.id)}
+                  >
+                    ×
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </section>
   );
 }
