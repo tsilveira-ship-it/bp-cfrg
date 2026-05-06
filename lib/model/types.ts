@@ -290,12 +290,35 @@ export type ModelParams = {
   subs: {
     tiers: SubscriptionTier[];
     vatRate: number;
+    /**
+     * NET target counts (acquis - churnés). Si cohortModel.enabled=false (default),
+     * la trajectoire `count[m]` est interpolée linéairement entre rampStartCount et rampEndCount,
+     * puis croissance par FY via `growthRates`. Le churn n'est PAS appliqué au stock (sinon
+     * double-comptage). `monthlyChurnPct` reste utilisé par les métriques LTV/CAC.
+     */
     rampStartCount: number;
     rampEndCount: number;
     growthRates: number[];   // length = horizonYears - 1, growth from prev FY end
     priceIndexPa: number;
     seasonality?: number[];           // 12 multipliers (Sept..Août). Default tous 1.
-    monthlyChurnPct?: number;         // % membres new perdu chaque mois (cohort retention proxy)
+    monthlyChurnPct?: number;         // % membres perdu chaque mois (cohort retention)
+    /**
+     * Cohort model — si enabled=true, le calcul `count[m]` devient
+     * count[m] = Σ_{k=0..m} acquisitions[k] × (1 - monthlyChurnPct)^(m-k).
+     * `acquisitions[m]` est dérivé d'une trajectoire d'acquisitions brutes mensuelles,
+     * pas du target NET. Remplace alors le ramp/growth/seasonality du mode legacy.
+     */
+    cohortModel?: {
+      enabled: boolean;
+      /** Acquisitions brutes/mois — début FY26 (mois 0). */
+      acquisitionStart: number;
+      /** Acquisitions brutes/mois — fin FY26 (mois 11). */
+      acquisitionEnd: number;
+      /** Croissance annuelle du taux d'acquisition mensuel post-FY26. Length = horizonYears - 1. */
+      acquisitionGrowthByFy: number[];
+      /** Saisonnalité appliquée aux acquisitions (12 multiplicateurs Sept..Août). Default = subs.seasonality. */
+      acquisitionSeasonality?: number[];
+    };
   };
 
   notes?: Record<string, string>;     // notes textuelles libres par scénario

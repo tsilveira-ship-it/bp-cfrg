@@ -3,9 +3,11 @@ import { ParamNumber } from "@/components/param-input";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { fmtNum } from "@/lib/format";
 import { buildTimeline, type ModelParams } from "@/lib/model/types";
-import { Sparkles } from "lucide-react";
+import { solveAcquisitionsFromNetTarget } from "@/lib/model/compute";
+import { Sparkles, Layers } from "lucide-react";
 
 type Props = {
   params: ModelParams;
@@ -159,6 +161,8 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
         </div>
       </section>
 
+      <CohortModelSection params={params} setParams={setParams} />
+
       <section>
         <div className="flex items-center justify-between mb-3">
           <div>
@@ -300,5 +304,214 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
         </div>
       </section>
     </div>
+  );
+}
+
+function CohortModelSection({
+  params,
+  setParams,
+}: {
+  params: ModelParams;
+  setParams: (updater: (p: ModelParams) => ModelParams) => void;
+}) {
+  const cm = params.subs.cohortModel;
+  const enabled = cm?.enabled === true;
+  const churn = params.subs.monthlyChurnPct ?? 0;
+  const horizonYears = params.timeline.horizonYears;
+
+  const setEnabled = (next: boolean) => {
+    setParams((p) => {
+      const existing = p.subs.cohortModel;
+      if (next) {
+        const defaultStart = existing?.acquisitionStart ?? Math.max(1, Math.round(p.subs.rampStartCount * (p.subs.monthlyChurnPct ?? 0.025)));
+        const defaultEnd = existing?.acquisitionEnd ?? Math.max(1, Math.round(p.subs.rampEndCount * (p.subs.monthlyChurnPct ?? 0.025)));
+        const growthLen = Math.max(0, horizonYears - 1);
+        const defaultGrowth = existing?.acquisitionGrowthByFy ?? new Array(growthLen).fill(0.10);
+        return {
+          ...p,
+          subs: {
+            ...p.subs,
+            cohortModel: {
+              enabled: true,
+              acquisitionStart: defaultStart,
+              acquisitionEnd: defaultEnd,
+              acquisitionGrowthByFy: defaultGrowth,
+              acquisitionSeasonality: existing?.acquisitionSeasonality,
+            },
+          },
+        };
+      }
+      return {
+        ...p,
+        subs: {
+          ...p.subs,
+          cohortModel: existing ? { ...existing, enabled: false } : undefined,
+        },
+      };
+    });
+  };
+
+  const autoCalcFromTarget = () => {
+    const startNet = params.subs.rampStartCount;
+    const endNet = params.subs.rampEndCount;
+    const churnRate = params.subs.monthlyChurnPct ?? 0.025;
+    const acqStart = solveAcquisitionsFromNetTarget(startNet, churnRate);
+    const acqEnd = solveAcquisitionsFromNetTarget(endNet, churnRate);
+    setParams((p) => ({
+      ...p,
+      subs: {
+        ...p.subs,
+        cohortModel: {
+          enabled: true,
+          acquisitionStart: Math.round(acqStart * 10) / 10,
+          acquisitionEnd: Math.round(acqEnd * 10) / 10,
+          acquisitionGrowthByFy: p.subs.cohortModel?.acquisitionGrowthByFy ?? new Array(Math.max(0, horizonYears - 1)).fill(0.10),
+          acquisitionSeasonality: p.subs.cohortModel?.acquisitionSeasonality,
+        },
+      },
+    }));
+  };
+
+  return (
+    <section className="border-2 border-dashed border-muted-foreground/30 rounded-lg p-4 bg-muted/5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Layers className="h-4 w-4 text-[var(--color-brand-red,#D32F2F)]" />
+          <div>
+            <h4 className="font-heading text-sm font-semibold uppercase tracking-wider">
+              Mode cohort (acquisitions brutes)
+            </h4>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Modélisation explicite acquisition × rétention. Désactivé = cible NET legacy.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="cohort-toggle" className="text-xs">
+            {enabled ? "Activé" : "Désactivé"}
+          </Label>
+          <Switch
+            id="cohort-toggle"
+            checked={enabled}
+            onCheckedChange={setEnabled}
+          />
+        </div>
+      </div>
+
+      {enabled && cm ? (
+        <div className="space-y-4">
+          <div className="text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/20 border border-amber-300 rounded p-2">
+            <strong>Mode cohort actif</strong> — les champs <code>rampStart/rampEnd</code> et{" "}
+            <code>growthRates</code> ci-dessus sont <em>ignorés</em>. La trajectoire est calculée
+            depuis les acquisitions mensuelles brutes ci-dessous, puis chaque cohorte décroît au
+            taux <code>{(churn * 100).toFixed(2)}%</code>/mois.
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Acquisitions/mois début FY26</Label>
+              <Input
+                type="number"
+                step="0.5"
+                value={cm.acquisitionStart}
+                onChange={(e) =>
+                  setParams((p) => ({
+                    ...p,
+                    subs: {
+                      ...p.subs,
+                      cohortModel: { ...cm, acquisitionStart: parseFloat(e.target.value) || 0 },
+                    },
+                  }))
+                }
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Brut, avant churn.
+              </p>
+            </div>
+            <div>
+              <Label className="text-xs">Acquisitions/mois fin FY26</Label>
+              <Input
+                type="number"
+                step="0.5"
+                value={cm.acquisitionEnd}
+                onChange={(e) =>
+                  setParams((p) => ({
+                    ...p,
+                    subs: {
+                      ...p.subs,
+                      cohortModel: { ...cm, acquisitionEnd: parseFloat(e.target.value) || 0 },
+                    },
+                  }))
+                }
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs mb-1.5 block">
+              Croissance annuelle du taux d&apos;acquisition (FY27 →)
+            </Label>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+              {cm.acquisitionGrowthByFy.map((g, idx) => (
+                <div key={idx} className="space-y-1">
+                  <Label className="text-[10px] text-muted-foreground">FY{27 + idx}</Label>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      step={1}
+                      value={(g * 100).toFixed(1).replace(/\.0$/, "")}
+                      onChange={(e) =>
+                        setParams((p) => ({
+                          ...p,
+                          subs: {
+                            ...p.subs,
+                            cohortModel: {
+                              ...cm,
+                              acquisitionGrowthByFy: cm.acquisitionGrowthByFy.map((x, i) =>
+                                i === idx ? (parseFloat(e.target.value) || 0) / 100 : x
+                              ),
+                            },
+                          },
+                        }))
+                      }
+                      className="pr-6 h-8 text-xs"
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
+                      %
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={autoCalcFromTarget}
+              className="text-xs h-7"
+              title="Calcule acquisitions = rampEnd × churn (Little's law steady state)"
+            >
+              Auto-calc depuis cible NET ({fmtNum(params.subs.rampStartCount)} → {fmtNum(params.subs.rampEndCount)})
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled
+              className="text-xs h-7 cursor-not-allowed opacity-50"
+              title="Bientôt dispo — extraction depuis crm.prospects + payments"
+            >
+              Importer dashboard CRM (V2)
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground italic">
+          Activer pour modéliser l&apos;acquisition mensuelle indépendamment de la rétention.
+          Utile pour calibrer CAC, modéliser scénarios churn, et simuler le funnel Bilan → abo.
+        </p>
+      )}
+    </section>
   );
 }

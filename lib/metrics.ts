@@ -129,11 +129,13 @@ export function bondInvestorReturn(
   return { invested: bondPrincipal, totalReturn, multiple, irr: annualIrr };
 }
 
-// LTV simplifié: prix moyen TTC × durée moyenne d'abonnement (mois)
-// On utilise inverse churn comme proxy de durée moyenne. Pour newSubs on n'a pas de churn modélisé,
-// on suppose 24 mois moyens (peut être paramétré plus tard).
-export function ltvCac(params: ModelParams, result: ModelResult, avgRetentionMonths = 24) {
+// LTV simplifié: prix moyen TTC × durée moyenne d'abonnement (mois).
+// Si `monthlyChurnPct` > 0, durée moyenne = 1 / churn (formule analytique cohort exponentiel).
+// Sinon fallback override `avgRetentionMonths` (24 mois par défaut).
+export function ltvCac(params: ModelParams, result: ModelResult, avgRetentionMonthsOverride = 24) {
   const avgPriceTTC = params.subs.tiers.reduce((s, t) => s + t.monthlyPrice * t.mixPct, 0);
+  const churn = params.subs.monthlyChurnPct ?? 0;
+  const avgRetentionMonths = churn > 0 ? 1 / churn : avgRetentionMonthsOverride;
   const ltv = avgPriceTTC * avgRetentionMonths;
 
   // CAC année 1: marketing total / nouveaux abos cumulés année 1

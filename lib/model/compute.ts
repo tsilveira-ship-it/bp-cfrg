@@ -121,11 +121,16 @@ function avgSubPrice(tiers: { monthlyPrice: number; mixPct: number }[]): number 
   return tiers.reduce((s, t) => s + t.monthlyPrice * t.mixPct, 0);
 }
 
-function monthlySubsCount(p: ModelParams, horizonMonths: number): number[] {
+/**
+ * NET target trajectory (mode legacy / cohortModel.enabled = false).
+ * Interpolation linéaire FY26 + croissance par FY + saisonnalité.
+ * Le churn N'EST PLUS appliqué ici (correction du bug de double-comptage).
+ * Le paramètre `monthlyChurnPct` reste utilisé par les métriques LTV/CAC.
+ */
+function monthlySubsCountNetTarget(p: ModelParams, horizonMonths: number): number[] {
   const out = new Array<number>(horizonMonths).fill(0);
   const { rampStartCount: a, rampEndCount: b, growthRates } = p.subs;
   const seasonality = p.subs.seasonality && p.subs.seasonality.length === 12 ? p.subs.seasonality : null;
-  const churn = p.subs.monthlyChurnPct ?? 0;
 
   // FY0 ramp linéaire
   for (let m = 0; m < FY_LEN; m++) {
@@ -143,14 +148,141 @@ function monthlySubsCount(p: ModelParams, horizonMonths: number): number[] {
     prevEnd = end;
   }
 
-  // Apply seasonality + churn cumulative
+  // Apply seasonality only — churn déjà inclus implicitement dans rampEnd / growthRates.
   for (let m = 0; m < horizonMonths; m++) {
     const moy = m % FY_LEN;
     const seasonFactor = seasonality ? seasonality[moy] : 1;
-    const churnFactor = Math.pow(1 - churn, m);
-    out[m] = out[m] * seasonFactor * churnFactor;
+    out[m] = out[m] * seasonFactor;
   }
   return out;
+}
+
+/**
+ * Cohort model — Niveau 1 basique.
+ * count[m] = Σ_{k=0..m} acquisitions[k] × (1 - churn)^(m-k)
+ *
+ * `acquisitions[m]` dérivé d'une trajectoire d'acquisitions brutes mensuelles :
+ * - FY26 ramp linéaire entre acquisitionStart et acquisitionEnd
+ * - FY27+ croissance via acquisitionGrowthByFy[]
+ * - Saisonnalité appliquée aux acquisitions (pas au stock)
+ */
+function monthlySubsCountCohort(p: ModelParams, horizonMonths: number): number[] {
+  const cm = p.subs.cohortModel;
+  if (!cm || !cm.enabled) {
+    // Fallback safety — ne devrait pas arriver si appelé via dispatcher
+    return monthlySubsCountNetTarget(p, horizonMonths);
+  }
+  const churn = p.subs.monthlyChurnPct ?? 0;
+  const acquisitionSeasonality =
+    cm.acquisitionSeasonality && cm.acquisitionSeasonality.length === 12
+      ? cm.acquisitionSeasonality
+      : (p.subs.seasonality && p.subs.seasonality.length === 12 ? p.subs.seasonality : null);
+
+  // 1. Build acquisitions[m]
+  const acq = new Array<number>(horizonMonths).fill(0);
+  const a0 = cm.acquisitionStart;
+  const a1 = cm.acquisitionEnd;
+
+  // FY26 ramp linéaire des acquisitions mensuelles
+  for (let m = 0; m < FY_LEN && m < horizonMonths; m++) {
+    acq[m] = a0 + ((a1 - a0) * m) / (FY_LEN - 1);
+  }
+  let prevEndAcq = a1;
+  const horizonYears = Math.floor(horizonMonths / FY_LEN);
+  for (let fy = 1; fy < horizonYears; fy++) {
+    const growth = cm.acquisitionGrowthByFy[fy - 1] ?? 0;
+    const start = prevEndAcq;
+    const end = prevEndAcq * (1 + growth);
+    for (let i = 0; i < FY_LEN; i++) {
+      acq[fy * FY_LEN + i] = start + ((end - start) * i) / (FY_LEN - 1);
+    }
+    prevEndAcq = end;
+  }
+
+  // Saisonnalité acquisitions (pas appliquée au stock)
+  for (let m = 0; m < horizonMonths; m++) {
+    const moy = m % FY_LEN;
+    const seasonFactor = acquisitionSeasonality ? acquisitionSeasonality[moy] : 1;
+    acq[m] = acq[m] * seasonFactor;
+  }
+
+  // 2. Build count[m] via cohort sum
+  const out = new Array<number>(horizonMonths).fill(0);
+  for (let m = 0; m < horizonMonths; m++) {
+    let total = 0;
+    for (let k = 0; k <= m; k++) {
+      total += acq[k] * Math.pow(1 - churn, m - k);
+    }
+    out[m] = total;
+  }
+  return out;
+}
+
+function monthlySubsCount(p: ModelParams, horizonMonths: number): number[] {
+  const useCohort = p.subs.cohortModel?.enabled === true;
+  return useCohort
+    ? monthlySubsCountCohort(p, horizonMonths)
+    : monthlySubsCountNetTarget(p, horizonMonths);
+}
+
+/**
+ * Acquisitions mensuelles brutes (utiles pour CAC, marketing, /revenue breakdown).
+ * - Mode cohort : retourne directement acquisitions[m] calculées.
+ * - Mode legacy NET : approx = max(0, count[m] - count[m-1]) + count[m-1] × churn (acquisitions
+ *   nécessaires pour maintenir le NET malgré le churn).
+ */
+export function monthlyAcquisitions(p: ModelParams, horizonMonths: number): number[] {
+  const churn = p.subs.monthlyChurnPct ?? 0;
+  const useCohort = p.subs.cohortModel?.enabled === true;
+  if (useCohort && p.subs.cohortModel) {
+    const cm = p.subs.cohortModel;
+    const acquisitionSeasonality =
+      cm.acquisitionSeasonality && cm.acquisitionSeasonality.length === 12
+        ? cm.acquisitionSeasonality
+        : (p.subs.seasonality && p.subs.seasonality.length === 12 ? p.subs.seasonality : null);
+    const acq = new Array<number>(horizonMonths).fill(0);
+    const a0 = cm.acquisitionStart;
+    const a1 = cm.acquisitionEnd;
+    for (let m = 0; m < FY_LEN && m < horizonMonths; m++) {
+      acq[m] = a0 + ((a1 - a0) * m) / (FY_LEN - 1);
+    }
+    let prevEndAcq = a1;
+    const horizonYears = Math.floor(horizonMonths / FY_LEN);
+    for (let fy = 1; fy < horizonYears; fy++) {
+      const growth = cm.acquisitionGrowthByFy[fy - 1] ?? 0;
+      const start = prevEndAcq;
+      const end = prevEndAcq * (1 + growth);
+      for (let i = 0; i < FY_LEN; i++) {
+        acq[fy * FY_LEN + i] = start + ((end - start) * i) / (FY_LEN - 1);
+      }
+      prevEndAcq = end;
+    }
+    for (let m = 0; m < horizonMonths; m++) {
+      const moy = m % FY_LEN;
+      const seasonFactor = acquisitionSeasonality ? acquisitionSeasonality[moy] : 1;
+      acq[m] = acq[m] * seasonFactor;
+    }
+    return acq;
+  }
+
+  // Mode NET : déduire acquisitions implicites pour reconstituer le funnel
+  const counts = monthlySubsCountNetTarget(p, horizonMonths);
+  const acq = new Array<number>(horizonMonths).fill(0);
+  for (let m = 0; m < horizonMonths; m++) {
+    const prev = m === 0 ? 0 : counts[m - 1];
+    const churned = prev * churn;
+    acq[m] = Math.max(0, counts[m] - prev + churned);
+  }
+  return acq;
+}
+
+/**
+ * Solver inverse (UX helper) : étant donné une cible NET et un churn, calcule l'acquisition
+ * mensuelle de steady-state nécessaire (Little's law : NET × churn).
+ */
+export function solveAcquisitionsFromNetTarget(netTarget: number, monthlyChurnPct: number): number {
+  if (monthlyChurnPct <= 0) return 0; // pas de churn = pas besoin de remplacer
+  return netTarget * monthlyChurnPct;
 }
 
 function monthlySubsRevenue(p: ModelParams, counts: number[]): number[] {
