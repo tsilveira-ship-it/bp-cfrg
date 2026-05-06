@@ -1,5 +1,6 @@
 "use client";
 import { useMemo } from "react";
+import Link from "next/link";
 import { useModelStore } from "@/lib/store";
 import { computeModel } from "@/lib/model/compute";
 import { effectiveMonthlyHours } from "@/lib/model/types";
@@ -9,7 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fmtNum, fmtPct } from "@/lib/format";
 import { InfoLabel } from "@/components/info-label";
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  CalendarClock,
+  ExternalLink,
+  Info,
+} from "lucide-react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -21,6 +28,10 @@ import {
   Legend,
   ReferenceLine,
 } from "recharts";
+import {
+  computeMonthlyHours,
+  HOURS_PER_FTE_PRODUCTIVE,
+} from "@/lib/capacity-planner";
 
 const tooltipStyle = {
   backgroundColor: "white",
@@ -37,6 +48,8 @@ const DEFAULT_CAPACITY = {
   capacityPerClassMax: 16,
   avgSessionsPerMonth: 8,
 };
+
+type CalcSource = "planner" | "fallback";
 
 export default function CapacityPage() {
   const params = useModelStore((s) => s.params);
@@ -55,35 +68,63 @@ export default function CapacityPage() {
     setParams((p) => ({ ...p, capacity: { ...DEFAULT_CAPACITY, ...(p.capacity ?? {}) } }));
   };
 
-  // Heures totales coaching dispo (pools positifs uniquement)
+  // === Source des heures coaching ===
+  // Priorité 1: planning détaillé /capacity-planner (areas + weeklySchedule + scaleByFy)
+  // Priorité 2: heuristique = pools freelance + cadres coachs détectés (130h × FTE)
+  const planner = params.capacity ?? null;
+  const hasPlanner = !!(planner?.areas && planner.weeklySchedule && planner.areas.length > 0);
+
   const totalCoachingHours = (params.salaries.freelancePools ?? [])
     .filter((p) => p.monthlyHours > 0 || (p.hoursPerWeekday ?? 0) > 0)
     .reduce((s, p) => s + Math.max(0, effectiveMonthlyHours(p)), 0);
+  const cadreCoaches = params.salaries.items.filter((it) => /coach|head/i.test(it.role));
+  const cadreFte = cadreCoaches.reduce((s, it) => s + it.fte, 0);
+  const cadreHours = cadreFte * HOURS_PER_FTE_PRODUCTIVE; // approximation 130h productives par ETP
+  const fallbackTotalHours = totalCoachingHours + cadreHours;
 
-  // 1h de coaching ouvre `parallelClasses` cours en parallèle, chacun à `capPerClass` membres
+  // Source du calcul + heures par mois
+  const source: CalcSource = hasPlanner ? "planner" : "fallback";
+
   const slotsPerHour = parallel * capPerClass;
   const slotsPerHourMin = parallel * capMin;
   const slotsPerHourMax = parallel * capMax;
 
+  // Calcul des heures dispo par mois selon scaleByFy si planner
   const data = result.monthly.map((m) => {
     const totalMembers = m.subsCount + m.legacyCount;
     const sessionsDemand = totalMembers * avgSessions;
-    const sessionsSupply = totalCoachingHours * slotsPerHour;
+
+    let monthlyHoursOffered = fallbackTotalHours;
+    if (hasPlanner && planner!.areas && planner!.weeklySchedule) {
+      const fyIdx = m.fy;
+      const scale = planner!.scaleByFy?.[fyIdx] ?? 1;
+      monthlyHoursOffered = computeMonthlyHours(
+        planner!.areas,
+        planner!.weeklySchedule,
+        scale
+      );
+    }
+
+    const sessionsSupply = monthlyHoursOffered * slotsPerHour;
     const saturation = sessionsSupply > 0 ? sessionsDemand / sessionsSupply : 0;
+
     return {
       label: m.label,
       Membres: Math.round(totalMembers),
       "Saturation %": Math.round(saturation * 100),
       saturationVal: saturation,
+      monthlyHoursOffered,
     };
   });
 
   const maxSat = Math.max(...data.map((d) => d.saturationVal));
   const maxSatMonth = data.find((d) => d.saturationVal === maxSat);
+  const lastHours = data[data.length - 1]?.monthlyHoursOffered ?? fallbackTotalHours;
+  const baseHours = data[0]?.monthlyHoursOffered ?? fallbackTotalHours;
 
-  const maxMembersTheoretical = (totalCoachingHours * slotsPerHour) / avgSessions;
-  const maxMembersMin = (totalCoachingHours * slotsPerHourMin) / avgSessions;
-  const maxMembersMax = (totalCoachingHours * slotsPerHourMax) / avgSessions;
+  const maxMembersTheoretical = (lastHours * slotsPerHour) / avgSessions;
+  const maxMembersMin = (lastHours * slotsPerHourMin) / avgSessions;
+  const maxMembersMax = (lastHours * slotsPerHourMax) / avgSessions;
 
   return (
     <div className="space-y-6">
@@ -91,17 +132,79 @@ export default function CapacityPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Capacité opérationnelle</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Heures coaching disponibles vs demande membres — alerte saturation
+            Vue rapide saturation membres vs heures de cours offertes.
           </p>
         </div>
         <ScenarioSwitcher />
       </header>
 
+      {/* Bandeau source du calcul */}
+      <Card
+        className={
+          source === "planner"
+            ? "border-emerald-300 bg-emerald-50/30"
+            : "border-amber-300 bg-amber-50/30"
+        }
+      >
+        <CardContent className="pt-5 flex flex-wrap items-start gap-3">
+          {source === "planner" ? (
+            <>
+              <CalendarClock className="h-5 w-5 text-emerald-700 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-sm text-emerald-900">
+                  Source : planning détaillé /capacity-planner ✓
+                </div>
+                <p className="text-xs text-emerald-900/80 mt-1">
+                  Heures de cours/mois calculées depuis ton planning (
+                  {planner!.areas!.length} espace{planner!.areas!.length > 1 ? "s" : ""} ×{" "}
+                  {planner!.weeklySchedule!.weekdayClassesPerArea} cours/jour ouvré +{" "}
+                  {planner!.weeklySchedule!.weekendClassesPerArea} cours/jour weekend), avec
+                  scaling par FY appliqué. FY1: <b>{Math.round(baseHours)}h</b>, dernier FY:{" "}
+                  <b>{Math.round(lastHours)}h</b>.
+                </p>
+              </div>
+              <Link
+                href="/capacity-planner"
+                className="text-xs text-emerald-800 underline hover:no-underline flex items-center gap-1"
+              >
+                <ExternalLink className="h-3 w-3" /> Modifier le planning
+              </Link>
+            </>
+          ) : (
+            <>
+              <AlertTriangle className="h-5 w-5 text-amber-700 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-sm text-amber-900">
+                  Source : heuristique (planning détaillé non configuré)
+                </div>
+                <p className="text-xs text-amber-900/80 mt-1">
+                  Heures dispo estimées : <b>{Math.round(totalCoachingHours)}h</b> freelance
+                  pools + <b>{Math.round(cadreHours)}h</b> cadres coachs détectés ({cadreFte}{" "}
+                  ETP × 137h productives) = <b>{Math.round(fallbackTotalHours)}h/mois</b>{" "}
+                  constants. Pour un calcul précis avec scaling FY, configure le{" "}
+                  <Link href="/capacity-planner" className="underline">
+                    capacity planner
+                  </Link>
+                  .
+                </p>
+              </div>
+              <Link
+                href="/capacity-planner"
+                className="text-xs text-amber-900 underline hover:no-underline flex items-center gap-1"
+              >
+                <ExternalLink className="h-3 w-3" /> Configurer le planning
+              </Link>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Hypothèses capacité</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Paramètres liés au scénario (sauvegardés via auto-save).
+            Ces paramètres servent au calcul de saturation. Les heures de cours offertes proviennent{" "}
+            {source === "planner" ? "du planning ci-dessus" : "de l'estimation heuristique"}.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -111,8 +214,7 @@ export default function CapacityPage() {
               <div className="flex-1">
                 <div className="font-semibold">Capacité utilise des valeurs par défaut</div>
                 <p className="text-amber-700/80 mt-0.5">
-                  Pour persister tes propres paramètres dans le scénario (et les exporter),
-                  active le bloc capacité.
+                  Active le bloc capacité pour persister tes paramètres dans le scénario.
                 </p>
                 <button
                   onClick={enableCapacity}
@@ -137,7 +239,7 @@ export default function CapacityPage() {
                 }
               />
               <p className="text-[10px] text-muted-foreground mt-1">
-                Ex: 2 si tu fais tourner 2 WODs simultanés (Hyrox + CrossFit) sur le même créneau.
+                Ex: 2 = WODs simultanés Hyrox + CrossFit.
               </p>
             </div>
             <div>
@@ -149,9 +251,7 @@ export default function CapacityPage() {
                   patch("capacity.capacityPerClass", parseFloat(e.target.value) || 0)
                 }
               />
-              <p className="text-[10px] text-muted-foreground mt-1">
-                Sert au calcul de saturation. Ex: 14 (mid-point 12-16).
-              </p>
+              <p className="text-[10px] text-muted-foreground mt-1">Mid-point 12-16.</p>
             </div>
             <div>
               <Label className="text-xs">Capacité min (range)</Label>
@@ -192,12 +292,20 @@ export default function CapacityPage() {
               </p>
             </div>
             <div>
-              <Label className="text-xs">Heures coaching dispo / mois</Label>
+              <Label className="text-xs">Heures de cours offertes</Label>
               <div className="h-9 px-3 flex items-center rounded-md border bg-muted/40 font-mono text-sm">
-                {totalCoachingHours.toFixed(1)}h
+                {hasPlanner ? (
+                  <>
+                    {Math.round(baseHours)}h → {Math.round(lastHours)}h/mois
+                  </>
+                ) : (
+                  <>{Math.round(fallbackTotalHours)}h/mois</>
+                )}
               </div>
               <p className="text-[10px] text-muted-foreground mt-1">
-                Somme des pools freelance positifs (édité dans /salaries).
+                {hasPlanner
+                  ? "Évolue selon scaling FY du planner."
+                  : `${Math.round(totalCoachingHours)}h freelance + ${Math.round(cadreHours)}h cadres.`}
               </p>
             </div>
             <div>
@@ -275,8 +383,8 @@ export default function CapacityPage() {
         <CardHeader>
           <CardTitle className="text-base">Évolution membres + saturation</CardTitle>
           <p className="text-xs text-muted-foreground">
-            La ligne 100% = capacité maximum théorique avec {parallel} cours en parallèle ×{" "}
-            {capPerClass} membres/cours. Au-delà → recruter coachs ou ajouter créneaux.
+            La ligne 100% = capacité max théorique. Au-delà → ajouter des cours, recruter ou
+            ajuster le scaling FY dans le planner.
           </p>
         </CardHeader>
         <CardContent>
@@ -315,21 +423,25 @@ export default function CapacityPage() {
 
       <Card className="bg-muted/30">
         <CardContent className="pt-5">
-          <h3 className="font-semibold text-sm mb-2">Analyse</h3>
+          <h3 className="font-semibold text-sm mb-2 flex items-center gap-2">
+            <Info className="h-4 w-4" /> Lecture
+          </h3>
           <ul className="text-xs text-muted-foreground list-disc pl-5 space-y-1">
             <li>
-              <strong>Saturation &lt; 70%</strong> = sous-utilisation, marge pour grossir sans
-              embaucher.
+              <strong>Saturation &lt; 70%</strong> = sous-utilisation, marge pour grossir.
             </li>
             <li>
               <strong>70-85%</strong> = sweet spot. Capacité utilisée mais pas en stress.
             </li>
             <li>
-              <strong>85-100%</strong> = tension. Recruter coach freelance avant que ça lâche.
+              <strong>85-100%</strong> = tension. Recruter coach ou ajouter des cours.
             </li>
             <li>
-              <strong>&gt; 100%</strong> = capacité dépassée. Pertes d&apos;abos ou refus
-              prospects. Action immédiate requise.
+              <strong>&gt; 100%</strong> = capacité dépassée. Pertes d&apos;abos / refus prospects.
+            </li>
+            <li>
+              💡 Pour ajuster le nb de cours, les espaces, l&apos;allocation cadres/freelance et le
+              scaling FY → <Link href="/capacity-planner" className="text-[#D32F2F] underline">/capacity-planner</Link>.
             </li>
           </ul>
         </CardContent>
