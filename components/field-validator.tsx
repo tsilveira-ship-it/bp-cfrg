@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Check, CheckCheck, Lock, RotateCcw } from "lucide-react";
+import { Check, CheckCheck, Flag, Lock, RotateCcw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -51,15 +51,23 @@ const STATUS_STYLE: Record<
     tip: "Valeur modifiée depuis la double validation — à re-valider",
     Icon: RotateCcw,
   },
+  flagged: {
+    color: "text-red-600",
+    tip: "🚩 Signalé à revoir",
+    Icon: Flag,
+  },
 };
 
 export function FieldValidator({ path, value, label }: Props) {
   const validation = useModelStore((s) => s.params.fieldValidations?.[path]);
   const validateField = useModelStore((s) => s.validateField);
   const unvalidateField = useModelStore((s) => s.unvalidateField);
+  const flagField = useModelStore((s) => s.flagField);
+  const unflagField = useModelStore((s) => s.unflagField);
   const [open, setOpen] = useState(false);
   const [adminEmail, setAdminEmail] = useState<string | undefined>(undefined);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [flagReason, setFlagReason] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -96,6 +104,16 @@ export function FieldValidator({ path, value, label }: Props) {
   };
   const onResetL2 = () => {
     unvalidateField(path, 2);
+    setOpen(false);
+  };
+  const onFlag = () => {
+    if (!adminEmail) return;
+    flagField(path, adminEmail, flagReason);
+    setFlagReason("");
+    setOpen(false);
+  };
+  const onUnflag = () => {
+    unflagField(path);
     setOpen(false);
   };
 
@@ -157,12 +175,71 @@ export function FieldValidator({ path, value, label }: Props) {
             canEdit={!!isAdmin}
           />
 
-          {!isAdmin && (
+          {/* Flag "à revoir" */}
+          <div
+            className={
+              "rounded border p-3 text-xs " +
+              (validation?.flagged
+                ? "border-red-300 bg-red-50/40"
+                : "bg-card")
+            }
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-semibold flex items-center gap-1">
+                <Flag className="h-3.5 w-3.5 text-red-600" /> Signalement &laquo;&nbsp;à revoir&nbsp;&raquo;
+              </span>
+              {validation?.flagged ? (
+                <span className="text-red-700">🚩 Signalé</span>
+              ) : (
+                <span className="text-muted-foreground italic">Non signalé</span>
+              )}
+            </div>
+            {validation?.flagged ? (
+              <div className="mt-1 text-[11px] space-y-0.5">
+                <div>
+                  Par <b>{validation.flagged.by}</b>
+                </div>
+                <div>Le {new Date(validation.flagged.date).toLocaleString("fr-FR")}</div>
+                {validation.flagged.reason && (
+                  <div className="italic">&laquo;&nbsp;{validation.flagged.reason}&nbsp;&raquo;</div>
+                )}
+                {adminEmail && (
+                  <Button variant="ghost" size="xs" onClick={onUnflag} className="mt-1">
+                    <Flag className="h-3 w-3" /> Retirer le signalement
+                  </Button>
+                )}
+              </div>
+            ) : (
+              adminEmail && (
+                <div className="space-y-1 mt-1">
+                  <input
+                    placeholder="Raison (optionnelle): ex 'à confirmer avec le bailleur'"
+                    value={flagReason}
+                    onChange={(e) => setFlagReason(e.target.value)}
+                    className="w-full text-[11px] rounded border bg-transparent px-2 py-1"
+                  />
+                  <Button variant="outline" size="xs" onClick={onFlag} className="text-red-600 border-red-300">
+                    <Flag className="h-3 w-3" /> Signaler à revoir
+                  </Button>
+                </div>
+              )
+            )}
+          </div>
+
+          {!isAdmin && !adminEmail && (
             <div className="rounded border border-amber-300 bg-amber-50/40 p-3 text-xs text-amber-800 flex items-start gap-2">
               <Lock className="h-4 w-4 shrink-0 mt-0.5" />
               <span>
-                Seuls les admins peuvent valider les champs. Tu peux voir l&apos;état de validation
-                mais pas le modifier.
+                Connecte-toi pour valider ou signaler des champs.
+              </span>
+            </div>
+          )}
+          {isAdmin === false && adminEmail && (
+            <div className="rounded border border-blue-300 bg-blue-50/40 p-3 text-xs text-blue-800 flex items-start gap-2">
+              <Lock className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>
+                Seuls les admins peuvent valider (4-eyes), mais tu peux signaler un champ
+                &laquo;&nbsp;à revoir&nbsp;&raquo;.
               </span>
             </div>
           )}
