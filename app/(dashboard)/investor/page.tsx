@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/table";
 import { fmtCurrency, fmtPct, fmtNum } from "@/lib/format";
 import { InfoLabel } from "@/components/info-label";
+import { UspBlock } from "@/components/usp-block";
 import { TrendingUp, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 export default function InvestorMetricsPage() {
@@ -104,6 +105,8 @@ export default function InvestorMetricsPage() {
       </header>
 
       <SynthesisCard />
+
+      <UspBlock />
 
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <Card>

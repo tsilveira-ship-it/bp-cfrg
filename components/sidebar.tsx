@@ -39,6 +39,8 @@ import {
   ChevronRight,
   Wrench,
   LineChart,
+  Users,
+  Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "@/components/user-menu";
@@ -106,6 +108,8 @@ const GROUPS: Group[] = [
     items: [
       { href: "/executive-summary", label: "Executive summary", icon: Sparkles, modes: [...ALL] },
       { href: "/financial-highlights", label: "Synthèse 1-page", icon: Sparkles, modes: [...ALL] },
+      { href: "/team", label: "Équipe", icon: Users, modes: [...ALL] },
+      { href: "/funnel", label: "Funnel CRM", icon: Filter, modes: [...ALL] },
       { href: "/use-of-funds", label: "Use of funds", icon: GitBranch, modes: [...ALL] },
       { href: "/cap-table", label: "Cap table", icon: PieChart, modes: [...ALL] },
       { href: "/share", label: "Partager (lien investisseur)", icon: Send, modes: ["build"] },
