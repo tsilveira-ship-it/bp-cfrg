@@ -1,4 +1,5 @@
 "use client";
+import { useMemo } from "react";
 import { ParamNumber } from "@/components/param-input";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -6,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { fmtNum } from "@/lib/format";
 import { buildTimeline, type ModelParams } from "@/lib/model/types";
-import { solveAcquisitionsFromNetTarget } from "@/lib/model/compute";
+import { solveAcquisitionsFromNetTarget, computeModel } from "@/lib/model/compute";
 import { Sparkles, Layers } from "lucide-react";
 
 type Props = {
@@ -20,23 +21,24 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
   const tl = buildTimeline(timeline.startYear, timeline.horizonYears);
   const growths = subs.growthRates ?? [];
 
-  const endCounts: number[] = [subs.rampEndCount];
-  for (let i = 0; i < growths.length; i++) {
-    endCounts.push(endCounts[i] * (1 + growths[i]));
-  }
-
-  const monthly: number[] = [];
-  for (let m = 0; m < 12; m++) {
-    monthly.push(subs.rampStartCount + ((subs.rampEndCount - subs.rampStartCount) * m) / 11);
-  }
-  let prev = subs.rampEndCount;
-  for (let fy = 0; fy < growths.length; fy++) {
-    const next = prev * (1 + growths[fy]);
-    for (let i = 0; i < 12; i++) {
-      monthly.push(prev + ((next - prev) * i) / 11);
+  // Trajectoire RÉELLE issue de computeModel : intègre cohort, churn par tier,
+  // courbe rétention, legacy multi-cohortes, bilan funnel, mix évolutif, pause, etc.
+  const result = useMemo(() => computeModel(params), [params]);
+  const monthly = useMemo(
+    () => result.monthly.map((m) => m.subsCount),
+    [result]
+  );
+  // endCounts = subsCount à la fin de chaque FY (mois 11, 23, 35, ...)
+  const endCounts: number[] = useMemo(() => {
+    const out: number[] = [];
+    for (let fy = 0; fy < tl.horizonYears; fy++) {
+      const idx = fy * 12 + 11;
+      out.push(monthly[idx] ?? monthly[monthly.length - 1] ?? 0);
     }
-    prev = next;
-  }
+    return out;
+  }, [monthly, tl.horizonYears]);
+
+  const startCount = monthly[0] ?? subs.rampStartCount;
 
   const max = Math.max(...monthly, 1);
   const sparkW = 100;
@@ -44,6 +46,19 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
   const points = monthly
     .map((v, i) => `${(i * sparkW) / Math.max(1, monthly.length - 1)},${sparkH - (v / max) * sparkH}`)
     .join(" ");
+
+  // Mode actif (pour banner contextuel)
+  const cohortEnabled = subs.cohortModel?.enabled === true;
+  const bilanEnabled = subs.bilanFunnel?.enabled === true;
+  const hasLegacyCohorts = (params.legacy.cohorts?.length ?? 0) > 0;
+  const hasTierChurn = subs.tiers.some((t) => t.monthlyChurnPct !== undefined);
+  const modeBadges: string[] = [];
+  if (cohortEnabled) modeBadges.push("Cohort");
+  if (bilanEnabled) modeBadges.push("Bilan funnel");
+  if (hasLegacyCohorts) modeBadges.push("Legacy multi-cohortes");
+  if (hasTierChurn) modeBadges.push("Churn/tier");
+  if (subs.cohortModel?.retentionCurve) modeBadges.push("Courbe rétention");
+  if (subs.avgMonthlyPausePct) modeBadges.push("Pause/freeze");
 
   const applyAll = (pct: number) => {
     setParams((p) => ({
@@ -265,12 +280,35 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
       </section>
 
       <section>
-        <div className="flex items-center gap-2 mb-2">
-          <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
-          <h4 className="font-heading text-sm font-semibold uppercase tracking-wider">
-            Aperçu trajectoire ({tl.horizonMonths} mois)
-          </h4>
+        <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
+            <h4 className="font-heading text-sm font-semibold uppercase tracking-wider">
+              Aperçu trajectoire RÉELLE ({tl.horizonMonths} mois)
+            </h4>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {modeBadges.length > 0 ? (
+              modeBadges.map((b) => (
+                <span
+                  key={b}
+                  className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[var(--color-brand-red,#D32F2F)]/10 text-[var(--color-brand-red,#D32F2F)] font-semibold"
+                >
+                  {b}
+                </span>
+              ))
+            ) : (
+              <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-semibold">
+                Mode NET legacy
+              </span>
+            )}
+          </div>
         </div>
+        <p className="text-[10px] text-muted-foreground -mt-1 mb-2">
+          Trajectoire calculée par <code>computeModel</code> — intègre tous les overrides
+          actifs (cohort, churn par tier, courbe rétention, legacy multi-cohortes, bilan
+          funnel, mix évolutif, pause).
+        </p>
         <div className="border rounded-md p-3 bg-muted/10">
           <svg
             viewBox={`0 0 ${sparkW} ${sparkH}`}
@@ -294,7 +332,7 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
           <div className={`grid gap-1 text-[10px] text-muted-foreground mt-2 text-center`} style={{ gridTemplateColumns: `repeat(${tl.horizonYears + 1}, 1fr)` }}>
             <div>
               {tl.monthLabels[0]}
-              <div className="text-foreground font-semibold">{fmtNum(subs.rampStartCount)}</div>
+              <div className="text-foreground font-semibold">{fmtNum(startCount)}</div>
             </div>
             {tl.fyLabels.map((lbl, i) => (
               <div key={lbl}>
