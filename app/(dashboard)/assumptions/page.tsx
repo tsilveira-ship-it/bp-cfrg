@@ -13,8 +13,10 @@ import {
 import Link from "next/link";
 import { fmtCurrency, fmtPct, fmtNum } from "@/lib/format";
 import { effectiveMonthlyHours } from "@/lib/model/types";
-import { Pencil, ExternalLink, MessageSquareText, Star, ToggleLeft, MessageSquare } from "lucide-react";
+import { Pencil, ExternalLink, MessageSquareText, Star, ToggleLeft, MessageSquare, Check, CheckCheck, ShieldQuestion } from "lucide-react";
 import { topKeyHypotheses, activeToggles } from "@/lib/key-hypotheses";
+import { getValidationStatus, getValueAtPath, summarizeValidations } from "@/lib/validation-status";
+import { FieldValidator } from "@/components/field-validator";
 
 type AssumptionRow = {
   category: string;
@@ -298,11 +300,16 @@ export default function AssumptionsPage() {
                     <TableHead>Hypothèse</TableHead>
                     <TableHead className="text-right">Valeur</TableHead>
                     <TableHead>Source / contexte</TableHead>
+                    <TableHead className="text-right">Validation</TableHead>
                     <TableHead className="text-right">Note</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {top.map((h) => (
+                  {top.map((h) => {
+                    const mainPath = h.paths[0];
+                    const currentValue = getValueAtPath(params, mainPath);
+                    const status = getValidationStatus(params.fieldValidations?.[mainPath], currentValue);
+                    return (
                     <TableRow key={h.rank}>
                       <TableCell className="font-bold text-[#D32F2F]">{h.rank}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{h.category}</TableCell>
@@ -320,6 +327,12 @@ export default function AssumptionsPage() {
                         {h.rationale}
                       </TableCell>
                       <TableCell className="text-right">
+                        <div className="inline-flex items-center gap-1.5">
+                          <ValidationBadge status={status} />
+                          <FieldValidator path={mainPath} value={currentValue} label={h.label} />
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
                         {h.noteKey ? (
                           <span title={params.fieldNotes?.[h.noteKey]?.note}>
                             <MessageSquare className="h-4 w-4 text-amber-600 inline" />
@@ -329,7 +342,8 @@ export default function AssumptionsPage() {
                         )}
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
               <p className="text-[11px] text-muted-foreground mt-3">
@@ -342,9 +356,63 @@ export default function AssumptionsPage() {
       })()}
 
       {(() => {
+        const top10 = topKeyHypotheses(params, 10);
+        const top10Paths = top10.map((h) => h.paths[0]);
+        const summary = summarizeValidations(params, top10Paths, (p) => getValueAtPath(params, p));
         const toggles = activeToggles(params);
         const onCount = toggles.filter((t) => t.on).length;
         return (
+          <>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ShieldQuestion className="h-4 w-4" /> Statut de validation (Top 10)
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Validation 4-eyes : il faut 2 admins distincts pour qu&apos;un champ atteigne le niveau 2.
+                Toute modification ultérieure de la valeur invalide automatiquement les validations.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                <div className="rounded border border-emerald-300 bg-emerald-50/30 p-2">
+                  <div className="flex items-center gap-1 text-emerald-700 font-bold">
+                    <CheckCheck className="h-3.5 w-3.5" /> Doublement validé
+                  </div>
+                  <div className="text-2xl font-heading font-bold text-emerald-700">
+                    {summary.validated}/{summary.total}
+                  </div>
+                </div>
+                <div className="rounded border border-amber-300 bg-amber-50/30 p-2">
+                  <div className="flex items-center gap-1 text-amber-700 font-bold">
+                    <Check className="h-3.5 w-3.5" /> 1ère validation
+                  </div>
+                  <div className="text-2xl font-heading font-bold text-amber-700">
+                    {summary.partial}
+                  </div>
+                </div>
+                <div className="rounded border border-orange-300 bg-orange-50/30 p-2">
+                  <div className="flex items-center gap-1 text-orange-700 font-bold">
+                    ⚠️ À re-valider
+                  </div>
+                  <div className="text-2xl font-heading font-bold text-orange-700">
+                    {summary.stale}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">valeur changée</div>
+                </div>
+                <div className="rounded border bg-muted/20 p-2">
+                  <div className="flex items-center gap-1 text-muted-foreground font-bold">
+                    Non validé
+                  </div>
+                  <div className="text-2xl font-heading font-bold">{summary.none}</div>
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-2 italic">
+                💡 Astuce: cliquer sur la pastille à côté d&apos;un paramètre dans /parameters pour valider.
+                Une fois doublement validé, tu peux passer à la suite sans risquer d&apos;y revenir.
+              </p>
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -383,6 +451,7 @@ export default function AssumptionsPage() {
               </div>
             </CardContent>
           </Card>
+          </>
         );
       })()}
 
@@ -499,5 +568,34 @@ export default function AssumptionsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function ValidationBadge({ status }: { status: ReturnType<typeof getValidationStatus> }) {
+  if (status === "validated") {
+    return (
+      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800">
+        <CheckCheck className="h-3 w-3" /> 2/2
+      </span>
+    );
+  }
+  if (status === "level1") {
+    return (
+      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800">
+        <Check className="h-3 w-3" /> 1/2
+      </span>
+    );
+  }
+  if (status === "level1-stale" || status === "validated-stale") {
+    return (
+      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-100 text-orange-800">
+        ⚠️ stale
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] bg-muted text-muted-foreground">
+      0/2
+    </span>
   );
 }
