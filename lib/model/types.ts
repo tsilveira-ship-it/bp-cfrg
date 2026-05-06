@@ -329,6 +329,24 @@ export type ModelParams = {
     seasonality?: number[];           // 12 multipliers (Sept..Août). Default tous 1.
     monthlyChurnPct?: number;         // % membres perdu chaque mois (cohort retention)
     /**
+     * Niveau 5 — Funnel Bilan → conversion abo (modèle CRM réel).
+     * Si défini, override `cohortModel.acquisitionStart/End` :
+     *   acquisitions[m] = bilanFunnel.monthlyBilans[m] × bilanFunnel.conversionPct
+     * Le revenu Bilan (19,90 €) est ajouté en revenu prestations et compté
+     * comme inflow Stripe direct.
+     */
+    bilanFunnel?: {
+      enabled: boolean;
+      /** Bilans payés par mois — trajectoire ramp + growth. */
+      monthlyBilansStart: number;
+      monthlyBilansEnd: number;
+      bilansGrowthByFy: number[];
+      /** Taux de conversion bilan → abonnement (%). */
+      conversionPct: number;
+      /** Prix Bilan TTC (default 19.90). */
+      bilanPriceTTC: number;
+    };
+    /**
      * Cohort model — si enabled=true, le calcul `count[m]` devient
      * count[m] = Σ_{k=0..m} acquisitions[k] × retention(m-k).
      * Par défaut retention(t) = (1 - monthlyChurnPct)^t (exponentielle).

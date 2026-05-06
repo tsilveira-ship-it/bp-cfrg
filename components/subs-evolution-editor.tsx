@@ -487,6 +487,8 @@ function CohortModelSection({
 
           <RetentionCurveEditor cm={cm} setParams={setParams} fallbackChurn={churn} />
 
+          <BilanFunnelEditor params={params} setParams={setParams} />
+
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
@@ -515,6 +517,208 @@ function CohortModelSection({
         </p>
       )}
     </section>
+  );
+}
+
+function BilanFunnelEditor({
+  params,
+  setParams,
+}: {
+  params: ModelParams;
+  setParams: (updater: (p: ModelParams) => ModelParams) => void;
+}) {
+  const bf = params.subs.bilanFunnel;
+  const enabled = bf?.enabled === true;
+  const horizonYears = params.timeline.horizonYears;
+
+  const setEnabled = (next: boolean) => {
+    setParams((p) => {
+      const existing = p.subs.bilanFunnel;
+      if (next) {
+        const growthLen = Math.max(0, horizonYears - 1);
+        return {
+          ...p,
+          subs: {
+            ...p.subs,
+            bilanFunnel: {
+              enabled: true,
+              monthlyBilansStart: existing?.monthlyBilansStart ?? 10,
+              monthlyBilansEnd: existing?.monthlyBilansEnd ?? 30,
+              bilansGrowthByFy: existing?.bilansGrowthByFy ?? new Array(growthLen).fill(0.20),
+              conversionPct: existing?.conversionPct ?? 0.45,
+              bilanPriceTTC: existing?.bilanPriceTTC ?? 19.90,
+            },
+          },
+        };
+      }
+      return {
+        ...p,
+        subs: {
+          ...p.subs,
+          bilanFunnel: existing ? { ...existing, enabled: false } : undefined,
+        },
+      };
+    });
+  };
+
+  const update = (patch: Partial<NonNullable<ModelParams["subs"]["bilanFunnel"]>>) => {
+    setParams((p) => {
+      const existing = p.subs.bilanFunnel;
+      if (!existing) return p;
+      return {
+        ...p,
+        subs: { ...p.subs, bilanFunnel: { ...existing, ...patch } },
+      };
+    });
+  };
+
+  // Estimations dérivées pour aperçu
+  const startAcq = bf ? bf.monthlyBilansStart * bf.conversionPct : 0;
+  const endAcq = bf ? bf.monthlyBilansEnd * bf.conversionPct : 0;
+  const startRevHT = bf ? bf.monthlyBilansStart * (bf.bilanPriceTTC / (1 + (params.subs.vatRate ?? 0.20))) : 0;
+
+  return (
+    <div className="border rounded-md p-3 bg-muted/10 space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h5 className="text-xs font-semibold uppercase tracking-wider">
+            Funnel Bilan → conversion abo (Niveau 5)
+          </h5>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            Override le ramp d&apos;acquisitions ci-dessus. acquisitions[m] = bilans[m] × conversion%.
+            Revenu Bilan ajouté en prestations.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="bilan-toggle" className="text-[10px]">
+            {enabled ? "Activé" : "Désactivé"}
+          </Label>
+          <Switch id="bilan-toggle" checked={enabled} onCheckedChange={setEnabled} />
+        </div>
+      </div>
+
+      {enabled && bf ? (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <Label className="text-[10px]">Bilans/mois début FY26</Label>
+              <Input
+                type="number"
+                step="1"
+                value={bf.monthlyBilansStart}
+                onChange={(e) => update({ monthlyBilansStart: parseFloat(e.target.value) || 0 })}
+                className="h-8 text-xs"
+              />
+            </div>
+            <div>
+              <Label className="text-[10px]">Bilans/mois fin FY26</Label>
+              <Input
+                type="number"
+                step="1"
+                value={bf.monthlyBilansEnd}
+                onChange={(e) => update({ monthlyBilansEnd: parseFloat(e.target.value) || 0 })}
+                className="h-8 text-xs"
+              />
+            </div>
+            <div>
+              <Label className="text-[10px]">Prix Bilan TTC (€)</Label>
+              <Input
+                type="number"
+                step="0.10"
+                value={bf.bilanPriceTTC}
+                onChange={(e) => update({ bilanPriceTTC: parseFloat(e.target.value) || 0 })}
+                className="h-8 text-xs"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <Label className="text-[10px]">Conversion bilan → abo (%)</Label>
+              <div className="relative">
+                <Input
+                  type="number"
+                  step="0.5"
+                  value={(bf.conversionPct * 100).toFixed(1)}
+                  onChange={(e) =>
+                    update({ conversionPct: (parseFloat(e.target.value) || 0) / 100 })
+                  }
+                  className="h-8 text-xs pr-6"
+                />
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
+                  %
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                Dashboard CRM live : ~45% (cible). Ajuster selon donnée réelle.
+              </p>
+            </div>
+            <div>
+              <Label className="text-[10px] mb-1.5 block">
+                Croissance annuelle bilans (FY27 →)
+              </Label>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
+                {bf.bilansGrowthByFy.map((g, idx) => (
+                  <div key={idx}>
+                    <Label className="text-[9px] text-muted-foreground">FY{27 + idx}</Label>
+                    <div className="relative">
+                      <Input
+                        type="number"
+                        step={1}
+                        value={(g * 100).toFixed(1).replace(/\.0$/, "")}
+                        onChange={(e) =>
+                          update({
+                            bilansGrowthByFy: bf.bilansGrowthByFy.map((x, i) =>
+                              i === idx ? (parseFloat(e.target.value) || 0) / 100 : x
+                            ),
+                          })
+                        }
+                        className="h-7 text-[10px] pr-5"
+                      />
+                      <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground">
+                        %
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 text-[10px] bg-background border rounded p-2">
+            <div>
+              <div className="text-muted-foreground">Acquisitions M0</div>
+              <div className="font-mono font-semibold">{startAcq.toFixed(1)}/mo</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Acquisitions M11</div>
+              <div className="font-mono font-semibold">{endAcq.toFixed(1)}/mo</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Revenu bilan M0 (HT)</div>
+              <div className="font-mono font-semibold">{startRevHT.toFixed(0)}€</div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled
+              className="text-[10px] h-6 cursor-not-allowed opacity-50"
+              title="Bientôt dispo — extraction crm.payments + crm.customers"
+            >
+              Importer trajectoire dashboard CRM (V2)
+            </Button>
+          </div>
+        </>
+      ) : (
+        <p className="text-[10px] text-muted-foreground italic">
+          Désactivé — acquisitions calculées via cohortModel ci-dessus. Activer pour modéliser
+          le funnel CRM réel (Bilan 19,90€ → conversion).
+        </p>
+      )}
+    </div>
   );
 }
 

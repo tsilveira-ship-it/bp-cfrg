@@ -247,7 +247,56 @@ function monthlySubsCount(p: ModelParams, horizonMonths: number): number[] {
 }
 
 /**
+ * Niveau 5 — Construction de la trajectoire mensuelle bilans payés.
+ * Retourne array bilans[m] (avant application taux conversion).
+ */
+export function monthlyBilansPaid(p: ModelParams, horizonMonths: number): number[] {
+  const bf = p.subs.bilanFunnel;
+  if (!bf || !bf.enabled) return new Array(horizonMonths).fill(0);
+  const out = new Array<number>(horizonMonths).fill(0);
+  const a0 = bf.monthlyBilansStart;
+  const a1 = bf.monthlyBilansEnd;
+  for (let m = 0; m < FY_LEN && m < horizonMonths; m++) {
+    out[m] = a0 + ((a1 - a0) * m) / (FY_LEN - 1);
+  }
+  let prevEnd = a1;
+  const horizonYears = Math.floor(horizonMonths / FY_LEN);
+  for (let fy = 1; fy < horizonYears; fy++) {
+    const growth = bf.bilansGrowthByFy[fy - 1] ?? 0;
+    const start = prevEnd;
+    const end = prevEnd * (1 + growth);
+    for (let i = 0; i < FY_LEN; i++) {
+      out[fy * FY_LEN + i] = start + ((end - start) * i) / (FY_LEN - 1);
+    }
+    prevEnd = end;
+  }
+  // Saisonnalité acquisition (réutilise celle du cohort si défini, sinon subs)
+  const seasonality =
+    p.subs.cohortModel?.acquisitionSeasonality ??
+    (p.subs.seasonality && p.subs.seasonality.length === 12 ? p.subs.seasonality : null);
+  if (seasonality) {
+    for (let m = 0; m < horizonMonths; m++) {
+      out[m] = out[m] * seasonality[m % FY_LEN];
+    }
+  }
+  return out;
+}
+
+/**
+ * Niveau 5 — revenu bilan mensuel (HT). Compté en prestations.
+ */
+export function monthlyBilanRevenue(p: ModelParams, horizonMonths: number): number[] {
+  const bf = p.subs.bilanFunnel;
+  if (!bf || !bf.enabled) return new Array(horizonMonths).fill(0);
+  const bilans = monthlyBilansPaid(p, horizonMonths);
+  const vatDivisor = 1 + (p.subs.vatRate ?? 0);
+  const priceHT = bf.bilanPriceTTC / vatDivisor;
+  return bilans.map((b) => b * priceHT);
+}
+
+/**
  * Acquisitions mensuelles brutes (utiles pour CAC, marketing, /revenue breakdown).
+ * - Mode bilanFunnel : acquisitions = bilans × conversionPct
  * - Mode cohort : retourne directement acquisitions[m] calculées.
  * - Mode legacy NET : approx = max(0, count[m] - count[m-1]) + count[m-1] × churn (acquisitions
  *   nécessaires pour maintenir le NET malgré le churn).
@@ -255,6 +304,14 @@ function monthlySubsCount(p: ModelParams, horizonMonths: number): number[] {
 export function monthlyAcquisitions(p: ModelParams, horizonMonths: number): number[] {
   const churn = p.subs.monthlyChurnPct ?? 0;
   const useCohort = p.subs.cohortModel?.enabled === true;
+
+  // Niveau 5 : bilan funnel override
+  const bf = p.subs.bilanFunnel;
+  if (useCohort && bf?.enabled) {
+    const bilans = monthlyBilansPaid(p, horizonMonths);
+    return bilans.map((b) => b * bf.conversionPct);
+  }
+
   if (useCohort && p.subs.cohortModel) {
     const cm = p.subs.cohortModel;
     const acquisitionSeasonality =
@@ -605,8 +662,11 @@ export function computeModel(p: ModelParams): ModelResult {
   }
   const prest = monthlyPrestations(p, H);
   const merch = monthlyMerch(p, H);
+  const bilanRev = monthlyBilanRevenue(p, H);
 
-  const totalRevenue = subsRevenue.map((v, i) => v + legacy.revenue[i] + prest[i] + merch[i]);
+  // Bilans ajoutés en prestations (ils sont des revenus ponctuels HT)
+  const prestWithBilan = prest.map((v, i) => v + bilanRev[i]);
+  const totalRevenue = subsRevenue.map((v, i) => v + legacy.revenue[i] + prestWithBilan[i] + merch[i]);
 
   const sal = monthlySalaries(p, H);
   const rent = monthlyRent(p, H);
@@ -795,7 +855,7 @@ export function computeModel(p: ModelParams): ModelResult {
       subsRevenue: subsRevenue[m],
       legacyCount: legacy.count[m],
       legacyRevenue: legacy.revenue[m],
-      prestationsRevenue: prest[m],
+      prestationsRevenue: prestWithBilan[m],
       merchRevenue: merch[m],
       totalRevenue: totalRevenue[m],
       salaries: sal[m],
