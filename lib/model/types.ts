@@ -318,7 +318,9 @@ export type ModelParams = {
     monthlyChurnPct?: number;         // % membres perdu chaque mois (cohort retention)
     /**
      * Cohort model — si enabled=true, le calcul `count[m]` devient
-     * count[m] = Σ_{k=0..m} acquisitions[k] × (1 - monthlyChurnPct)^(m-k).
+     * count[m] = Σ_{k=0..m} acquisitions[k] × retention(m-k).
+     * Par défaut retention(t) = (1 - monthlyChurnPct)^t (exponentielle).
+     * Si `retentionCurve` est défini, retention(t) suit la courbe exacte (Niveau 3).
      * `acquisitions[m]` est dérivé d'une trajectoire d'acquisitions brutes mensuelles,
      * pas du target NET. Remplace alors le ramp/growth/seasonality du mode legacy.
      */
@@ -332,6 +334,15 @@ export type ModelParams = {
       acquisitionGrowthByFy: number[];
       /** Saisonnalité appliquée aux acquisitions (12 multiplicateurs Sept..Août). Default = subs.seasonality. */
       acquisitionSeasonality?: number[];
+      /**
+       * Niveau 3 — courbe de rétention non-exponentielle (override).
+       * Tableau retention[t] = % cohorte survivant t mois après acquisition.
+       * Position 0 = mois 0 (=1.0). Position N = mois N. Au-delà du dernier
+       * point connu, on extrapole linéairement avec la pente moyenne des
+       * 6 derniers points (ou steady-state si plat).
+       * Si défini, override la formule exponentielle (1 - churn)^t.
+       */
+      retentionCurve?: number[];
     };
   };
 

@@ -485,6 +485,8 @@ function CohortModelSection({
             </div>
           </div>
 
+          <RetentionCurveEditor cm={cm} setParams={setParams} fallbackChurn={churn} />
+
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
@@ -513,5 +515,231 @@ function CohortModelSection({
         </p>
       )}
     </section>
+  );
+}
+
+type CohortModelInner = NonNullable<ModelParams["subs"]["cohortModel"]>;
+
+const CURVE_ANCHORS = [0, 1, 3, 6, 12, 24] as const;
+const CURVE_LENGTH = 25; // Mois 0..24
+
+function buildCurveFromAnchors(anchors: Record<number, number>): number[] {
+  // Interpolation linéaire entre les ancres connues, valeurs croissantes en t.
+  const knownPoints = CURVE_ANCHORS.filter((t) => anchors[t] !== undefined && !isNaN(anchors[t]));
+  if (knownPoints.length === 0) return [];
+  const out = new Array<number>(CURVE_LENGTH).fill(0);
+  for (let t = 0; t < CURVE_LENGTH; t++) {
+    let lower = knownPoints[0];
+    let upper = knownPoints[knownPoints.length - 1];
+    for (let i = 0; i < knownPoints.length; i++) {
+      if (knownPoints[i] <= t) lower = knownPoints[i];
+      if (knownPoints[i] >= t) {
+        upper = knownPoints[i];
+        break;
+      }
+    }
+    if (lower === upper) {
+      out[t] = anchors[lower];
+    } else {
+      const span = upper - lower;
+      const ratio = (t - lower) / span;
+      out[t] = anchors[lower] + (anchors[upper] - anchors[lower]) * ratio;
+    }
+  }
+  return out;
+}
+
+function RetentionCurveEditor({
+  cm,
+  setParams,
+  fallbackChurn,
+}: {
+  cm: CohortModelInner;
+  setParams: (updater: (p: ModelParams) => ModelParams) => void;
+  fallbackChurn: number;
+}) {
+  const curve = cm.retentionCurve;
+  const enabled = Array.isArray(curve) && curve.length > 0;
+
+  // Pour UI: déduire valeurs aux ancres si curve définie, sinon défaut exp
+  const anchorVals: Record<number, number> = {};
+  for (const t of CURVE_ANCHORS) {
+    if (enabled && curve && t < curve.length) {
+      anchorVals[t] = curve[t];
+    } else {
+      anchorVals[t] = Math.pow(1 - fallbackChurn, t);
+    }
+  }
+
+  const setEnabled = (next: boolean) => {
+    setParams((p) => {
+      const existing = p.subs.cohortModel;
+      if (!existing) return p;
+      if (next) {
+        // Init courbe depuis exponentielle actuelle
+        const churnRate = p.subs.monthlyChurnPct ?? 0.025;
+        const initCurve = new Array(CURVE_LENGTH).fill(0).map((_, t) => Math.pow(1 - churnRate, t));
+        return {
+          ...p,
+          subs: {
+            ...p.subs,
+            cohortModel: { ...existing, retentionCurve: initCurve },
+          },
+        };
+      }
+      const { retentionCurve: _drop, ...rest } = existing;
+      return {
+        ...p,
+        subs: {
+          ...p.subs,
+          cohortModel: rest,
+        },
+      };
+    });
+  };
+
+  const updateAnchor = (t: number, valuePct: number) => {
+    setParams((p) => {
+      const existing = p.subs.cohortModel;
+      if (!existing) return p;
+      const newAnchors: Record<number, number> = { ...anchorVals, [t]: Math.max(0, Math.min(1, valuePct / 100)) };
+      const newCurve = buildCurveFromAnchors(newAnchors);
+      return {
+        ...p,
+        subs: {
+          ...p.subs,
+          cohortModel: { ...existing, retentionCurve: newCurve },
+        },
+      };
+    });
+  };
+
+  // SVG sparkline
+  const W = 200;
+  const H = 50;
+  const series = enabled && curve ? curve : new Array(CURVE_LENGTH).fill(0).map((_, t) => Math.pow(1 - fallbackChurn, t));
+  const points = series
+    .map((v, i) => `${(i * W) / (CURVE_LENGTH - 1)},${H - v * H}`)
+    .join(" ");
+
+  return (
+    <div className="border rounded-md p-3 bg-muted/10 space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h5 className="text-xs font-semibold uppercase tracking-wider">
+            Courbe rétention non-exponentielle
+          </h5>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            Override la formule exp(1 - churn). Saisir % survivants à M0/M1/M3/M6/M12/M24.
+            Interpolation linéaire entre points.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="curve-toggle" className="text-[10px]">
+            {enabled ? "Activée" : "Désactivée"}
+          </Label>
+          <Switch id="curve-toggle" checked={enabled} onCheckedChange={setEnabled} />
+        </div>
+      </div>
+
+      {enabled ? (
+        <>
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+            {CURVE_ANCHORS.map((t) => (
+              <div key={t} className="space-y-1">
+                <Label className="text-[10px] text-muted-foreground">M{t}</Label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    step="0.5"
+                    value={(anchorVals[t] * 100).toFixed(1)}
+                    onChange={(e) => updateAnchor(t, parseFloat(e.target.value) || 0)}
+                    className="pr-6 h-8 text-xs"
+                    disabled={t === 0}
+                    title={t === 0 ? "M0 toujours 100%" : `% survivants au mois ${t}`}
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
+                    %
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-2 items-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                // Preset CrossFit (newbie drop M1-M3 puis stable)
+                const cfPreset = buildCurveFromAnchors({ 0: 1, 1: 0.85, 3: 0.7, 6: 0.6, 12: 0.5, 24: 0.42 });
+                setParams((p) => ({
+                  ...p,
+                  subs: {
+                    ...p.subs,
+                    cohortModel: p.subs.cohortModel ? { ...p.subs.cohortModel, retentionCurve: cfPreset } : p.subs.cohortModel,
+                  },
+                }));
+              }}
+              className="text-[10px] h-6"
+            >
+              Preset CrossFit (newbie drop)
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                // Preset chain fitness (drop fort)
+                const fitPreset = buildCurveFromAnchors({ 0: 1, 1: 0.7, 3: 0.45, 6: 0.30, 12: 0.18, 24: 0.10 });
+                setParams((p) => ({
+                  ...p,
+                  subs: {
+                    ...p.subs,
+                    cohortModel: p.subs.cohortModel ? { ...p.subs.cohortModel, retentionCurve: fitPreset } : p.subs.cohortModel,
+                  },
+                }));
+              }}
+              className="text-[10px] h-6"
+            >
+              Preset chain (drop fort)
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled
+              className="text-[10px] h-6 cursor-not-allowed opacity-50"
+              title="Bientôt dispo — calcul depuis crm.sessions"
+            >
+              Importer Javelot/ResaWod (V2)
+            </Button>
+          </div>
+
+          <div className="border rounded p-2 bg-background">
+            <svg
+              viewBox={`0 0 ${W} ${H}`}
+              preserveAspectRatio="none"
+              className="w-full h-12"
+            >
+              <polyline fill="none" stroke="#D32F2F" strokeWidth="1" points={points} />
+              <line x1="0" y1={H * 0.5} x2={W} y2={H * 0.5} stroke="#e5e5e5" strokeWidth="0.3" strokeDasharray="1 1" />
+              <text x="2" y={H * 0.5 - 1} fontSize="4" fill="#999">50%</text>
+            </svg>
+            <div className="grid grid-cols-6 gap-1 text-[9px] text-muted-foreground mt-1">
+              {CURVE_ANCHORS.map((t) => (
+                <div key={t} className="text-center">
+                  <div>M{t}</div>
+                  <div className="font-mono text-foreground">{(anchorVals[t] * 100).toFixed(0)}%</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : (
+        <p className="text-[10px] text-muted-foreground italic">
+          Désactivée — rétention exponentielle (1 - churn)^t utilisée. Activer pour modéliser
+          un newbie-drop ou une courbe empirique.
+        </p>
+      )}
+    </div>
   );
 }

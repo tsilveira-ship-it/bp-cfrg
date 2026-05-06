@@ -158,8 +158,28 @@ function monthlySubsCountNetTarget(p: ModelParams, horizonMonths: number): numbe
 }
 
 /**
+ * Niveau 3 — évalue retention(t) pour t = nb mois depuis acquisition.
+ * Si `retentionCurve` défini, lookup direct + extrapolation linéaire au-delà.
+ * Sinon, formule exponentielle (1 - churn)^t.
+ */
+export function evalRetention(
+  t: number,
+  monthlyChurnPct: number,
+  curve?: number[]
+): number {
+  if (!curve || curve.length === 0) return Math.pow(1 - monthlyChurnPct, t);
+  if (t < curve.length) return Math.max(0, curve[t]);
+  // Extrapolation : pente moyenne des 6 derniers points (ou disponible).
+  const last = curve[curve.length - 1];
+  const lookback = Math.min(6, curve.length - 1);
+  if (lookback <= 0) return Math.max(0, last);
+  const slope = (curve[curve.length - 1] - curve[curve.length - 1 - lookback]) / lookback;
+  return Math.max(0, last + slope * (t - (curve.length - 1)));
+}
+
+/**
  * Cohort model — Niveau 1 basique.
- * count[m] = Σ_{k=0..m} acquisitions[k] × (1 - churn)^(m-k)
+ * count[m] = Σ_{k=0..m} acquisitions[k] × retention(m-k)
  *
  * `acquisitions[m]` dérivé d'une trajectoire d'acquisitions brutes mensuelles :
  * - FY26 ramp linéaire entre acquisitionStart et acquisitionEnd
@@ -206,12 +226,13 @@ function monthlySubsCountCohort(p: ModelParams, horizonMonths: number): number[]
     acq[m] = acq[m] * seasonFactor;
   }
 
-  // 2. Build count[m] via cohort sum
+  // 2. Build count[m] via cohort sum (utilise retention curve si défini, sinon exponentielle)
+  const curve = cm.retentionCurve;
   const out = new Array<number>(horizonMonths).fill(0);
   for (let m = 0; m < horizonMonths; m++) {
     let total = 0;
     for (let k = 0; k <= m; k++) {
-      total += acq[k] * Math.pow(1 - churn, m - k);
+      total += acq[k] * evalRetention(m - k, churn, curve);
     }
     out[m] = total;
   }
