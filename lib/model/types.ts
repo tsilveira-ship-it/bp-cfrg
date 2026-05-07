@@ -135,6 +135,35 @@ export type AcquisitionChannel = {
   growthPa: number;
 };
 
+/**
+ * Bundle 3 — Discipline d'un créneau (CrossFit, Hyrox, halté, gym, running, teens, masters, autre).
+ */
+export type ClassDiscipline =
+  | "crossfit"
+  | "hyrox"
+  | "halterophilie"
+  | "gymnastique"
+  | "running"
+  | "teens"
+  | "masters"
+  | "other";
+
+/**
+ * Bundle 3 — Persona type (segment client).
+ */
+export type Persona = {
+  id: string;
+  name: string;
+  /** Part dans la base totale (somme = 1.0). */
+  sharePct: number;
+  /** Sessions/mois moyennes pour cette persona. */
+  avgSessionsPerMonth: number;
+  /** Disciplines préférées (poids relatif). */
+  disciplineMix?: Partial<Record<ClassDiscipline, number>>;
+  /** Préférence horaire (matin/midi/soir/we). */
+  hourPreferences?: { morning: number; lunch: number; evening: number; weekend: number };
+};
+
 /** Niveau 4 — cohorte legacy avec dynamique propre. */
 export type LegacyCohort = {
   id: string;
@@ -571,6 +600,32 @@ export type ModelParams = {
       midTerm: number;          // 3-12 mois
       longTerm: number;         // 12+ mois
     };
+    /**
+     * Bundle 3 — Discipline assignée par créneau (jour × heure).
+     * Matrix 7×14 string ClassDiscipline (vide = pas de tag).
+     * Permet d'analyser couverture programmatique.
+     */
+    disciplineByCellMatrix?: (ClassDiscipline | "")[][];
+    /**
+     * Bundle 3 — Personas types pour analyse demande différenciée.
+     */
+    personas?: Persona[];
+    /**
+     * Bundle 3 — No-show factor : % de réservations non honorées (default 0.10).
+     * Capacité effective = capacity × (1 / (1 - noShowPct)) — légère overbook autorisée.
+     */
+    noShowPct?: number;
+    /**
+     * Bundle 3 — Coût marginal par heure de cours ouverte (€/h).
+     * Pour calcul break-even cours additionnel ouvert. Default = hourlyRate freelance moyen.
+     */
+    marginalHourlyCostEur?: number;
+    /**
+     * Bundle 3 — Prix moyen par séance encaissé (€/séance HT).
+     * Pour break-even revenu marginal d'un cours additionnel.
+     * Si undefined, dérivé du modèle (CA abos / total séances mensuelles).
+     */
+    marginalSessionRevenueEur?: number;
   };
 
   openingCash: number;

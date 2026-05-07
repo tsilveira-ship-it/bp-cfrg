@@ -1,7 +1,9 @@
 import type {
+  ClassDiscipline,
   CoachAllocation,
   GymArea,
   ModelParams,
+  Persona,
   WeeklySchedule,
 } from "./model/types";
 
@@ -457,6 +459,166 @@ export function avgSessionsWeighted(
   return (
     (base.newMember * shareNew + base.midTerm * shareMid + base.longTerm * shareLong) / sumShare
   );
+}
+
+// ============================================================================
+// Bundle 3 — Disciplines, personas, no-show, coût marginal
+// ============================================================================
+
+/** Liste des disciplines supportées avec couleurs UI. */
+export const DISCIPLINES: { id: ClassDiscipline; label: string; color: string }[] = [
+  { id: "crossfit", label: "CrossFit", color: "#D32F2F" },
+  { id: "hyrox", label: "Hyrox", color: "#7C2D12" },
+  { id: "halterophilie", label: "Haltéro", color: "#B45309" },
+  { id: "gymnastique", label: "Gym", color: "#0E7490" },
+  { id: "running", label: "Running", color: "#16A34A" },
+  { id: "teens", label: "Teens", color: "#A21CAF" },
+  { id: "masters", label: "Masters", color: "#0F766E" },
+  { id: "other", label: "Autre", color: "#64748B" },
+];
+
+/** Personas par défaut basés sur la heatmap CRM CFRG. */
+export function defaultPersonas(): Persona[] {
+  return [
+    {
+      id: "csp_plus",
+      name: "CSP+ 30-45 ans",
+      sharePct: 0.55,
+      avgSessionsPerMonth: 9,
+      disciplineMix: { crossfit: 0.6, hyrox: 0.2, halterophilie: 0.1, gymnastique: 0.1 },
+      hourPreferences: { morning: 0.25, lunch: 0.15, evening: 0.55, weekend: 0.05 },
+    },
+    {
+      id: "athlete_hyrox",
+      name: "Athlète Hyrox amateur",
+      sharePct: 0.10,
+      avgSessionsPerMonth: 12,
+      disciplineMix: { hyrox: 0.5, crossfit: 0.3, running: 0.2 },
+      hourPreferences: { morning: 0.4, lunch: 0.10, evening: 0.40, weekend: 0.10 },
+    },
+    {
+      id: "masters_50",
+      name: "Masters 50+",
+      sharePct: 0.10,
+      avgSessionsPerMonth: 6,
+      disciplineMix: { masters: 0.7, crossfit: 0.2, gymnastique: 0.1 },
+      hourPreferences: { morning: 0.7, lunch: 0.1, evening: 0.1, weekend: 0.1 },
+    },
+    {
+      id: "teens_14",
+      name: "Teens 14+",
+      sharePct: 0.05,
+      avgSessionsPerMonth: 5,
+      disciplineMix: { teens: 0.8, crossfit: 0.2 },
+      hourPreferences: { morning: 0.0, lunch: 0.1, evening: 0.5, weekend: 0.4 },
+    },
+    {
+      id: "forces_ordre",
+      name: "Forces de l'ordre / prépa",
+      sharePct: 0.05,
+      avgSessionsPerMonth: 10,
+      disciplineMix: { crossfit: 0.4, hyrox: 0.4, running: 0.2 },
+      hourPreferences: { morning: 0.5, lunch: 0.1, evening: 0.3, weekend: 0.1 },
+    },
+    {
+      id: "newbie",
+      name: "Débutant reprise sport",
+      sharePct: 0.15,
+      avgSessionsPerMonth: 5,
+      disciplineMix: { crossfit: 0.7, gymnastique: 0.15, masters: 0.15 },
+      hourPreferences: { morning: 0.2, lunch: 0.2, evening: 0.5, weekend: 0.1 },
+    },
+  ];
+}
+
+/**
+ * Bundle 3 — Calcule la moyenne pondérée sessions/mois sur l'ensemble des personas.
+ */
+export function avgSessionsByPersona(personas: Persona[]): number {
+  const sumShare = personas.reduce((s, p) => s + p.sharePct, 0);
+  if (sumShare <= 0) return 0;
+  return personas.reduce((s, p) => s + p.sharePct * p.avgSessionsPerMonth, 0) / sumShare;
+}
+
+/**
+ * Bundle 3 — Distribution de la demande par persona × créneau (heatmap).
+ * Utile pour voir si un persona est mal servi (Masters 50+ matin = OK, Teens soir = OK).
+ *
+ * Pour chaque cellule, on combine :
+ *   weight_persona = base_weight × pref_horaire(persona, dow, hour)
+ * Puis on normalise par persona.
+ */
+export function buildDemandHeatmapFromPersonas(
+  personas: Persona[],
+  baseMatrix: number[][]
+): number[][] {
+  // Aggrégation simple : pour chaque cellule, somme(weight_base × pref_horaire(persona, dow, hour) × share_persona)
+  const out: number[][] = Array.from({ length: 7 }, () =>
+    new Array(HEATMAP_HOURS.length).fill(0)
+  );
+  for (let dow = 0; dow < 7; dow++) {
+    const isWeekend = dow >= 5;
+    for (let i = 0; i < HEATMAP_HOURS.length; i++) {
+      const hour = HEATMAP_HOURS[i];
+      const base = baseMatrix[dow]?.[i] ?? 0;
+      if (base <= 0) continue;
+      let weight = 0;
+      for (const p of personas) {
+        const pref = p.hourPreferences ?? { morning: 0.25, lunch: 0.15, evening: 0.55, weekend: 0.05 };
+        let prefValue = 0;
+        if (isWeekend) prefValue = pref.weekend;
+        else if (hour >= 7 && hour < 10) prefValue = pref.morning;
+        else if (hour >= 11 && hour < 14) prefValue = pref.lunch;
+        else if (hour >= 17 && hour <= 21) prefValue = pref.evening;
+        else prefValue = pref.morning * 0.3; // creux
+        weight += p.sharePct * prefValue;
+      }
+      out[dow][i] = base * weight;
+    }
+  }
+  return out;
+}
+
+/**
+ * Bundle 3 — Capacité effective avec no-show factor.
+ * Si noShow=0.10, on peut overbook légèrement → capacité × (1 / 0.90) = +11%.
+ */
+export function effectiveCapacityWithNoShow(rawCapacity: number, noShowPct = 0): number {
+  const usable = Math.max(0.5, 1 - noShowPct);
+  return rawCapacity / usable;
+}
+
+export type MarginalClassEconomics = {
+  hourlyCostEur: number;       // coût d'ouverture d'1h cours (1 coach freelance)
+  revenuePerSlotEur: number;   // revenu moyen / place vendue HT
+  capacityPerHour: number;     // places dispo / cours
+  breakevenFillRate: number;   // % remplissage minimal pour rentabiliser
+  recommendedOpen: boolean;    // true si fillRate prévu ≥ breakeven
+};
+
+/**
+ * Bundle 3 — Économie marginale d'un cours supplémentaire ouvert.
+ * coût = 1h × tarif coach freelance.
+ * revenu = nb places vendues × prix moyen séance HT (= prix abo HT / sessions/mo).
+ * breakeven = coût / (places × prix unitaire).
+ */
+export function marginalClassEconomics(
+  hourlyCostEur: number,
+  capacityPerHour: number,
+  revenuePerSlotEur: number,
+  expectedFillRate = 0.7
+): MarginalClassEconomics {
+  const breakevenFillRate =
+    capacityPerHour > 0 && revenuePerSlotEur > 0
+      ? hourlyCostEur / (capacityPerHour * revenuePerSlotEur)
+      : Infinity;
+  return {
+    hourlyCostEur,
+    revenuePerSlotEur,
+    capacityPerHour,
+    breakevenFillRate,
+    recommendedOpen: expectedFillRate >= breakevenFillRate,
+  };
 }
 
 /** Coût mensuel d'un pool freelance basé sur les heures allouées et son hourlyRate. */

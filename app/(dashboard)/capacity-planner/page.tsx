@@ -28,7 +28,9 @@ import { useModelStore } from "@/lib/store";
 import { computeModel } from "@/lib/model/compute";
 import {
   autoScheduleParallelMatrix,
+  avgSessionsByPersona,
   avgSessionsWeighted,
+  buildDemandHeatmapFromPersonas,
   compareCdiVsFreelance,
   computeAllocatedHours,
   computeMonthlyCapacityFromMatrix,
@@ -38,24 +40,30 @@ import {
   computeWeeklyHours,
   defaultDemandHeatmap,
   defaultParallelMatrix,
+  defaultPersonas,
   DEFAULT_AREAS,
   DEFAULT_PRODUCTIVE_RATIO,
   DEFAULT_SCHEDULE,
+  DISCIPLINES,
+  effectiveCapacityWithNoShow,
   findBreakEvenHours,
   freelanceCostFromAllocations,
   HEATMAP_DAYS,
   HEATMAP_HOURS,
   hoursToFte,
   HOURS_PER_FTE_THEORETICAL,
+  marginalClassEconomics,
   recommendCapacityStrategy,
   type CdiHypothesis,
   type FreelanceHypothesis,
 } from "@/lib/capacity-planner";
 import type {
+  ClassDiscipline,
   CoachAllocation,
   GymArea,
   ModelParams,
   ModelResult,
+  Persona,
   WeeklySchedule,
 } from "@/lib/model/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -476,6 +484,12 @@ export default function CapacityPlannerPage() {
       />
 
       <SessionsByTenureSection params={params} updateCapacity={updateCapacity} />
+
+      <PersonasSection params={params} updateCapacity={updateCapacity} />
+
+      <DisciplinesSection params={params} updateCapacity={updateCapacity} />
+
+      <MarginalEconomicsSection params={params} updateCapacity={updateCapacity} result={result} />
 
 
       {/* KPIs par FY */}
@@ -1687,6 +1701,454 @@ function SessionsByTenureSection({
             </div>
           </div>
         ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================================
+// Bundle 3 — Personas (segmentation client + demande différenciée)
+// ============================================================================
+function PersonasSection({
+  params,
+  updateCapacity,
+}: {
+  params: ModelParams;
+  updateCapacity: (patch: Partial<NonNullable<typeof params.capacity>>) => void;
+}) {
+  const personas = params.capacity?.personas ?? [];
+  const totalShare = personas.reduce((s, p) => s + p.sharePct, 0);
+  const avgSessions = personas.length > 0 ? avgSessionsByPersona(personas) : 0;
+
+  const setPersonas = (next: Persona[]) => updateCapacity({ personas: next });
+  const addPersona = () =>
+    setPersonas([
+      ...personas,
+      {
+        id: `pers_${Date.now()}`,
+        name: "Nouveau persona",
+        sharePct: 0.10,
+        avgSessionsPerMonth: 8,
+        hourPreferences: { morning: 0.25, lunch: 0.15, evening: 0.55, weekend: 0.05 },
+      },
+    ]);
+  const removePersona = (id: string) =>
+    setPersonas(personas.filter((p) => p.id !== id));
+  const updatePersona = (id: string, patch: Partial<Persona>) =>
+    setPersonas(personas.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <UsersRound className="h-4 w-4 text-[#D32F2F]" />
+          Personas — segmentation client (Bundle 3)
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Définit les types de membres (CSP+, Masters, Teens, athlètes Hyrox, etc.) avec
+          leurs préférences horaires et fréquence de pratique. Permet d&apos;analyser couverture
+          des segments et calibrer la heatmap demande.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="text-xs text-muted-foreground">
+            {personas.length} persona{personas.length > 1 ? "s" : ""} — share total{" "}
+            <span className={Math.abs(totalShare - 1) < 0.01 ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
+              {(totalShare * 100).toFixed(0)}%
+            </span>
+            {personas.length > 0 ? (
+              <>
+                {" — "}sessions/mo pondérée :{" "}
+                <strong className="text-foreground">{avgSessions.toFixed(1)}</strong>
+              </>
+            ) : null}
+          </div>
+          <div className="flex gap-2">
+            {personas.length === 0 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPersonas(defaultPersonas())}
+                className="text-[10px] h-7"
+              >
+                Preset CFRG (6 personas)
+              </Button>
+            ) : null}
+            <Button variant="outline" size="sm" onClick={addPersona} className="text-[10px] h-7">
+              <Plus className="h-3 w-3 mr-1" /> Persona
+            </Button>
+          </div>
+        </div>
+
+        {personas.length > 0 ? (
+          <div className="space-y-2">
+            {personas.map((p) => (
+              <div key={p.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end p-2 border rounded bg-background">
+                <div className="md:col-span-3">
+                  <Label className="text-[10px]">Nom</Label>
+                  <Input
+                    value={p.name}
+                    onChange={(e) => updatePersona(p.id, { name: e.target.value })}
+                    className="h-7 text-xs"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <Label className="text-[10px]">Share (%)</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    value={(p.sharePct * 100).toFixed(0)}
+                    onChange={(e) =>
+                      updatePersona(p.id, { sharePct: (parseFloat(e.target.value) || 0) / 100 })
+                    }
+                    className="h-7 text-xs"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <Label className="text-[10px]">Sessions/mo</Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    value={p.avgSessionsPerMonth}
+                    onChange={(e) =>
+                      updatePersona(p.id, { avgSessionsPerMonth: parseFloat(e.target.value) || 0 })
+                    }
+                    className="h-7 text-xs"
+                  />
+                </div>
+                <div className="md:col-span-4">
+                  <Label className="text-[10px]">Préférence horaire (matin/midi/soir/we)</Label>
+                  <div className="grid grid-cols-4 gap-1">
+                    {(["morning", "lunch", "evening", "weekend"] as const).map((slot) => (
+                      <Input
+                        key={slot}
+                        type="number"
+                        step="0.05"
+                        value={(p.hourPreferences?.[slot] ?? 0).toFixed(2)}
+                        onChange={(e) =>
+                          updatePersona(p.id, {
+                            hourPreferences: {
+                              ...(p.hourPreferences ?? {
+                                morning: 0,
+                                lunch: 0,
+                                evening: 0,
+                                weekend: 0,
+                              }),
+                              [slot]: parseFloat(e.target.value) || 0,
+                            },
+                          })
+                        }
+                        className="h-7 px-1 text-[10px] text-center"
+                        title={slot}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="md:col-span-1 text-right">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-600 h-7"
+                    onClick={() => removePersona(p.id)}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const base = params.capacity?.demandHeatmap ?? defaultDemandHeatmap();
+                const computed = buildDemandHeatmapFromPersonas(personas, base);
+                updateCapacity({ demandHeatmap: computed });
+              }}
+              className="text-[10px] h-7"
+              title="Régénère la heatmap demande à partir des préférences horaires personas"
+            >
+              <Wand2 className="h-3 w-3 mr-1" />
+              Régénérer heatmap demande depuis personas
+            </Button>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================================
+// Bundle 3 — Disciplines par créneau
+// ============================================================================
+function DisciplinesSection({
+  params,
+  updateCapacity,
+}: {
+  params: ModelParams;
+  updateCapacity: (patch: Partial<NonNullable<typeof params.capacity>>) => void;
+}) {
+  const matrix = params.capacity?.disciplineByCellMatrix;
+  const enabled = !!matrix;
+
+  const setEnabled = (next: boolean) => {
+    if (next) {
+      const empty: (ClassDiscipline | "")[][] = Array.from({ length: 7 }, () =>
+        new Array(HEATMAP_HOURS.length).fill("")
+      );
+      updateCapacity({ disciplineByCellMatrix: empty });
+    } else {
+      updateCapacity({ disciplineByCellMatrix: undefined });
+    }
+  };
+
+  const updateCell = (dow: number, hourIdx: number, val: ClassDiscipline | "") => {
+    const next: (ClassDiscipline | "")[][] = matrix
+      ? matrix.map((r) => [...r])
+      : Array.from({ length: 7 }, () => new Array(HEATMAP_HOURS.length).fill(""));
+    if (!next[dow]) next[dow] = new Array(HEATMAP_HOURS.length).fill("");
+    next[dow][hourIdx] = val;
+    updateCapacity({ disciplineByCellMatrix: next });
+  };
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = {};
+    if (!matrix) return c;
+    for (const row of matrix) {
+      for (const cell of row) {
+        if (cell) c[cell] = (c[cell] ?? 0) + 1;
+      }
+    }
+    return c;
+  }, [matrix]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <CalendarClock className="h-4 w-4 text-[#D32F2F]" />
+          Disciplines par créneau (Bundle 3)
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Tag chaque créneau de la grille avec une discipline (CrossFit, Hyrox, Halté, etc.).
+          Permet d&apos;analyser couverture programmatique : « Pas de Hyrox samedi = perte segment ».
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex flex-wrap gap-2 text-[10px]">
+            {Object.entries(counts).map(([k, n]) => {
+              const d = DISCIPLINES.find((dd) => dd.id === k);
+              return (
+                <span
+                  key={k}
+                  className="px-1.5 py-0.5 rounded font-mono"
+                  style={{ backgroundColor: `${d?.color}20`, color: d?.color }}
+                >
+                  {d?.label}: {n}
+                </span>
+              );
+            })}
+          </div>
+          <Switch checked={enabled} onCheckedChange={setEnabled} />
+        </div>
+
+        {enabled && matrix ? (
+          <div className="overflow-x-auto">
+            <div className="min-w-[600px]">
+              <div
+                className="grid gap-1"
+                style={{ gridTemplateColumns: `40px repeat(${HEATMAP_HOURS.length}, 1fr)` }}
+              >
+                <div></div>
+                {HEATMAP_HOURS.map((h) => (
+                  <div key={h} className="text-[10px] text-slate-400 text-center tabular-nums">
+                    {h}h
+                  </div>
+                ))}
+              </div>
+              {HEATMAP_DAYS.map((label, dow) => (
+                <div
+                  key={dow}
+                  className="grid gap-1 mt-1"
+                  style={{ gridTemplateColumns: `40px repeat(${HEATMAP_HOURS.length}, 1fr)` }}
+                >
+                  <div className="text-xs text-slate-600 font-medium flex items-center">
+                    {label}
+                  </div>
+                  {HEATMAP_HOURS.map((h, i) => {
+                    const cell = matrix[dow]?.[i] ?? "";
+                    const d = DISCIPLINES.find((dd) => dd.id === cell);
+                    return (
+                      <select
+                        key={`d-${dow}-${h}`}
+                        value={cell}
+                        onChange={(e) =>
+                          updateCell(dow, i, e.target.value as ClassDiscipline | "")
+                        }
+                        className="h-7 px-0.5 text-[9px] rounded border bg-background tabular-nums"
+                        style={{
+                          backgroundColor: d ? `${d.color}20` : undefined,
+                          color: d?.color,
+                          borderColor: d ? d.color : undefined,
+                        }}
+                      >
+                        <option value="">—</option>
+                        {DISCIPLINES.map((dd) => (
+                          <option key={dd.id} value={dd.id}>
+                            {dd.label}
+                          </option>
+                        ))}
+                      </select>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-[10px] text-muted-foreground italic">
+            Activer pour assigner une discipline à chaque créneau du planning.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================================
+// Bundle 3 — Économie marginale d'un cours additionnel
+// ============================================================================
+function MarginalEconomicsSection({
+  params,
+  updateCapacity,
+  result,
+}: {
+  params: ModelParams;
+  updateCapacity: (patch: Partial<NonNullable<typeof params.capacity>>) => void;
+  result: ModelResult;
+}) {
+  const cap = params.capacity;
+  const noShow = cap?.noShowPct ?? 0;
+  const hourlyCostInput = cap?.marginalHourlyCostEur;
+  const sessionRevenueInput = cap?.marginalSessionRevenueEur;
+
+  // Default coût horaire = tarif freelance moyen des pools
+  const defaultHourlyCost = useMemo(() => {
+    const pools = params.salaries.freelancePools ?? [];
+    if (pools.length === 0) return 25;
+    return pools.reduce((s, p) => s + p.hourlyRate, 0) / pools.length;
+  }, [params.salaries.freelancePools]);
+
+  // Default revenu/séance = derive du modèle (CA abos FY1 / total séances FY1)
+  const defaultSessionRevenue = useMemo(() => {
+    const fy1 = result.yearly[0];
+    if (!fy1) return 12;
+    const totalMembers = fy1.totalRevenue > 0
+      ? result.monthly.slice(0, 12).reduce((s, m) => s + m.subsCount, 0) / 12
+      : 0;
+    const totalSessions = totalMembers * (cap?.avgSessionsPerMonth ?? 8) * 12;
+    return totalSessions > 0 ? fy1.subsRevenue / totalSessions : 12;
+  }, [result.yearly, result.monthly, cap?.avgSessionsPerMonth]);
+
+  const hourlyCost = hourlyCostInput ?? defaultHourlyCost;
+  const sessionRevenue = sessionRevenueInput ?? defaultSessionRevenue;
+  const capacityPerHour = cap?.areas?.[0]?.capacity ?? cap?.capacityPerClass ?? 14;
+  const econ = marginalClassEconomics(hourlyCost, capacityPerHour, sessionRevenue, 0.7);
+
+  const effectiveCap = effectiveCapacityWithNoShow(capacityPerHour, noShow);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-[#D32F2F]" />
+          Économie marginale d&apos;un cours additionnel (Bundle 3)
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Décide si ouvrir un cours supplémentaire est rentable. Compare coût coach (1h freelance)
+          vs revenu attendu (places × prix moyen séance HT).
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <Label className="text-[10px]">Coût horaire coach (€/h)</Label>
+            <Input
+              type="number"
+              step="1"
+              value={hourlyCost.toFixed(2)}
+              onChange={(e) =>
+                updateCapacity({ marginalHourlyCostEur: parseFloat(e.target.value) || 0 })
+              }
+              className="h-8 text-xs"
+            />
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              Default : moyenne pools freelance ({defaultHourlyCost.toFixed(0)}€)
+            </p>
+          </div>
+          <div>
+            <Label className="text-[10px]">Revenu / séance (€ HT)</Label>
+            <Input
+              type="number"
+              step="0.5"
+              value={sessionRevenue.toFixed(2)}
+              onChange={(e) =>
+                updateCapacity({ marginalSessionRevenueEur: parseFloat(e.target.value) || 0 })
+              }
+              className="h-8 text-xs"
+            />
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              Default : CA abos / total séances ({defaultSessionRevenue.toFixed(2)}€)
+            </p>
+          </div>
+          <div>
+            <Label className="text-[10px]">No-show / annulation tardive (%)</Label>
+            <div className="relative">
+              <Input
+                type="number"
+                step="0.5"
+                value={(noShow * 100).toFixed(1)}
+                onChange={(e) =>
+                  updateCapacity({ noShowPct: (parseFloat(e.target.value) || 0) / 100 })
+                }
+                className="h-8 text-xs pr-7"
+              />
+              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">%</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              Capacité effective : {effectiveCap.toFixed(1)} places (overbook ok si {(noShow * 100).toFixed(0)}%)
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+          <Stat label="Coût/cours" value={Math.round(hourlyCost)} suffix=" €" />
+          <Stat label="Revenu max (places pleines)" value={Math.round(sessionRevenue * capacityPerHour)} suffix=" €" />
+          <Stat
+            label="Break-even fill rate"
+            value={Math.round(econ.breakevenFillRate * 100)}
+            suffix="%"
+          />
+          <Stat label="Capa /cours" value={capacityPerHour} suffix=" places" />
+        </div>
+
+        <div className={"p-3 rounded border-l-4 " + (econ.breakevenFillRate <= 0.5 ? "border-emerald-600 bg-emerald-50" : econ.breakevenFillRate <= 0.7 ? "border-amber-600 bg-amber-50" : "border-red-600 bg-red-50")}>
+          <p className="text-xs">
+            <strong>
+              {econ.breakevenFillRate <= 0.5
+                ? "Très rentable"
+                : econ.breakevenFillRate <= 0.7
+                  ? "Rentable si > 70% rempli"
+                  : "Marginal — attention"}
+            </strong>{" "}
+            — Ouvrir un cours additionnel devient rentable à partir de{" "}
+            <strong>{(econ.breakevenFillRate * 100).toFixed(0)}%</strong> de remplissage. Si tu vises{" "}
+            <strong>70%+</strong> sat sur les pics, ouvrir le 2e espace est{" "}
+            <strong>{econ.recommendedOpen ? "recommandé" : "non recommandé"}</strong>.
+          </p>
+        </div>
       </CardContent>
     </Card>
   );
