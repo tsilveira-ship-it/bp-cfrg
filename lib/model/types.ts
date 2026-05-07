@@ -552,6 +552,25 @@ export type ModelParams = {
      * Bundle 1 — Cible saturation pour reco engine. Default 0.75 (= 75%).
      */
     targetSaturationPct?: number;
+    /**
+     * Bundle 2 — Planning hétérogène par créneau (jour × heure).
+     * Matrix 7×14 (dow × hour 7..20). Valeur = nb d'espaces ouverts simultanément
+     * sur ce créneau (0 = fermé, 1 = espace A seul, 2 = A+B en parallèle).
+     * Si défini, override `weeklySchedule.weekdayClassesPerArea/weekendClassesPerArea`.
+     * Permet de modéliser réalité : Lun 18h = 2 espaces, Mar 10h = 1 espace.
+     */
+    parallelByCellMatrix?: number[][];
+    /**
+     * Bundle 2 — Évolution `avgSessionsPerMonth` par cohorte d'ancienneté membre.
+     * Ex { newMember: 5, midTerm: 8, longTerm: 12 } avec seuils mois 0-3, 3-12, 12+.
+     * Si cohort model actif, le moteur dérive une moyenne pondérée par cohorte
+     * au lieu d'utiliser `avgSessionsPerMonth` constant.
+     */
+    sessionsByTenure?: {
+      newMember: number;        // 0-3 mois ancienneté
+      midTerm: number;          // 3-12 mois
+      longTerm: number;         // 12+ mois
+    };
   };
 
   openingCash: number;

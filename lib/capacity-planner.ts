@@ -222,11 +222,13 @@ export function computeSaturationHeatmap(
   avgSessionsPerMonth: number,
   matrix: number[][],
   areas: GymArea[],
-  scale: number
+  scale: number,
+  parallelMatrix?: number[][]
 ): { cells: SaturationCell[]; maxSaturation: number; avgSaturation: number; totalDemand: number; totalCapacity: number } {
   const totalWeight = heatmapTotalWeight(matrix);
   const totalDemandMonth = membersAtFyEnd * avgSessionsPerMonth;
-  const areaCapacity = areas.reduce((s, a) => s + a.capacity, 0);
+  const sortedCaps = [...areas.map((a) => a.capacity)].sort((x, y) => y - x);
+  const totalAreaCapacity = sortedCaps.reduce((s, c) => s + c, 0);
   const cells: SaturationCell[] = [];
   let maxSat = 0;
   let satSum = 0;
@@ -237,14 +239,20 @@ export function computeSaturationHeatmap(
     for (let i = 0; i < HEATMAP_HOURS.length; i++) {
       const hour = HEATMAP_HOURS[i];
       const w = matrix[dow]?.[i] ?? 0;
-      // Demande projetée mensuelle sur ce créneau = total × poids relatif × 4.3 sem/mois
-      // (chaque cellule dow×hour est un créneau hebdomadaire, on le compte 4.3 fois/mois)
+      // Bundle 2 — Si parallelMatrix défini, capacité par cellule = nbEspacesOuverts × cap des N premiers
+      // Sinon (Bundle 1), tous les espaces sont ouverts par défaut.
+      let cellCapacity = totalAreaCapacity;
+      if (parallelMatrix) {
+        const nOpen = Math.max(0, Math.min(parallelMatrix[dow]?.[i] ?? 0, areas.length));
+        cellCapacity = 0;
+        for (let k = 0; k < nOpen; k++) cellCapacity += sortedCaps[k];
+      }
       const demandSlotMonth = totalWeight > 0 ? (totalDemandMonth * w) / totalWeight : 0;
-      const capacitySlotMonth = w > 0 ? areaCapacity * scale * 4.3 : 0;
-      const sat = capacitySlotMonth > 0 ? demandSlotMonth / capacitySlotMonth : 0;
+      const capacitySlotMonth = w > 0 && cellCapacity > 0 ? cellCapacity * scale * 4.3 : 0;
+      const sat = capacitySlotMonth > 0 ? demandSlotMonth / capacitySlotMonth : (demandSlotMonth > 0 ? Infinity : 0);
       if (w > 0) {
-        if (sat > maxSat) maxSat = sat;
-        satSum += sat;
+        if (sat > maxSat && Number.isFinite(sat)) maxSat = sat;
+        satSum += Number.isFinite(sat) ? sat : 0;
         satCount += 1;
         totalCap += capacitySlotMonth;
       }
@@ -323,6 +331,132 @@ export function recommendCapacityStrategy(
     suggestedScaleGlobal,
     hotCells,
   };
+}
+
+// ============================================================================
+// Bundle 2 — Planning hétérogène par créneau
+// ============================================================================
+
+/**
+ * Matrice par défaut "1 espace ouvert" sur les heures de schedule, 0 ailleurs.
+ * Reflète DEFAULT_SCHEDULE : 5 wd (en pic 7h, 12h, 18h, 19h, 20h) + 3 we (9h, 10h, 11h).
+ */
+export function defaultParallelMatrix(): number[][] {
+  const out: number[][] = [];
+  const wdHours = [7, 12, 18, 19, 20];
+  const weHours = [9, 10, 11];
+  for (let dow = 0; dow < 7; dow++) {
+    const row = new Array(HEATMAP_HOURS.length).fill(0);
+    const isWeekend = dow >= 5;
+    const targetHours = isWeekend ? weHours : wdHours;
+    for (const h of targetHours) {
+      const i = HEATMAP_HOURS.indexOf(h);
+      if (i >= 0) row[i] = 1;
+    }
+    out.push(row);
+  }
+  return out;
+}
+
+/**
+ * Compute capacity mensuelle places à partir d'une matrice de parallélisme par créneau.
+ * Pour chaque cellule [dow][hour] : capacity_slot/sem = nbAreasOpen × Σ(areas.capacity).
+ * Note: si nbAreasOpen=2, on suppose que les 2 plus grands espaces sont ouverts.
+ * Simplification (V2) : on prend nbAreasOpen × moyenne des espaces.
+ */
+export function computeMonthlyCapacityFromMatrix(
+  matrix: number[][],
+  areas: GymArea[],
+  scale = 1
+): number {
+  if (areas.length === 0) return 0;
+  // On utilise les capacités triées descendantes pour matérialiser "les N premiers espaces ouverts"
+  const sortedCaps = [...areas.map((a) => a.capacity)].sort((x, y) => y - x);
+  let weeklyCap = 0;
+  for (let dow = 0; dow < matrix.length; dow++) {
+    for (let i = 0; i < matrix[dow].length; i++) {
+      const n = Math.max(0, Math.min(matrix[dow][i], areas.length));
+      let cellCap = 0;
+      for (let k = 0; k < n; k++) cellCap += sortedCaps[k];
+      weeklyCap += cellCap;
+    }
+  }
+  return weeklyCap * 4.3 * scale;
+}
+
+/**
+ * Bundle 2 — Sat-driven auto-scheduling.
+ * Étant donné la heatmap de demande + capacité espace A (premier espace),
+ * propose une matrice de parallélisme : ouvre N espaces sur les créneaux
+ * où la demande projette > targetSat avec N-1 espaces.
+ *
+ * Algo glouton : pour chaque cellule active (weight > 0), monter le nombre
+ * d'espaces ouverts jusqu'à ce que sat <= target ou jusqu'à areas.length.
+ */
+export function autoScheduleParallelMatrix(
+  membersAtFyEnd: number,
+  avgSessionsPerMonth: number,
+  demandMatrix: number[][],
+  areas: GymArea[],
+  scale: number,
+  targetSat = 0.75
+): number[][] {
+  const out: number[][] = Array.from({ length: 7 }, () =>
+    new Array(HEATMAP_HOURS.length).fill(0)
+  );
+  const totalWeight = heatmapTotalWeight(demandMatrix);
+  if (totalWeight <= 0 || areas.length === 0) return out;
+  const totalDemand = membersAtFyEnd * avgSessionsPerMonth;
+  const sortedCaps = [...areas.map((a) => a.capacity)].sort((x, y) => y - x);
+  for (let dow = 0; dow < 7; dow++) {
+    for (let i = 0; i < HEATMAP_HOURS.length; i++) {
+      const w = demandMatrix[dow]?.[i] ?? 0;
+      if (w <= 0) continue;
+      const demandSlot = (totalDemand * w) / totalWeight;
+      // Essaye 1 puis 2 puis 3... espaces jusqu'à atteindre target sat.
+      let n = 1;
+      for (; n <= areas.length; n++) {
+        let cap = 0;
+        for (let k = 0; k < n; k++) cap += sortedCaps[k];
+        const capSlot = cap * scale * 4.3;
+        if (capSlot > 0 && demandSlot / capSlot <= targetSat) break;
+      }
+      out[dow][i] = Math.min(n, areas.length);
+    }
+  }
+  return out;
+}
+
+// ============================================================================
+// Bundle 2 — avgSessionsPerMonth dérivé du cohort
+// ============================================================================
+
+/**
+ * Calcule la moyenne pondérée de séances/mois en fonction de la composition
+ * de la base par tranches d'ancienneté.
+ * Si cohortModel non actif, retourne fallback constant.
+ *
+ * Approche simplifiée :
+ * - Si on a counts mensuels (subsCount[]) sur l'horizon, à un mois m donné :
+ *   - Cohorte "récente" (entrée dans les 3 derniers mois) ≈ 25% en steady
+ *   - "Mid" (3-12 mois) ≈ 35%
+ *   - "Long" (12+ mois) ≈ 40%
+ * - Avec proportions paramétrables. Pour V1, ratios fixes.
+ */
+export function avgSessionsWeighted(
+  base: { newMember: number; midTerm: number; longTerm: number },
+  fallback: number,
+  cohortActive: boolean,
+  shareNew = 0.25,
+  shareMid = 0.35,
+  shareLong = 0.40
+): number {
+  if (!cohortActive) return fallback;
+  const sumShare = shareNew + shareMid + shareLong;
+  if (sumShare <= 0) return fallback;
+  return (
+    (base.newMember * shareNew + base.midTerm * shareMid + base.longTerm * shareLong) / sumShare
+  );
 }
 
 /** Coût mensuel d'un pool freelance basé sur les heures allouées et son hourlyRate. */

@@ -27,13 +27,17 @@ import {
 import { useModelStore } from "@/lib/store";
 import { computeModel } from "@/lib/model/compute";
 import {
+  autoScheduleParallelMatrix,
+  avgSessionsWeighted,
   compareCdiVsFreelance,
   computeAllocatedHours,
+  computeMonthlyCapacityFromMatrix,
   computeMonthlyCapacitySlots,
   computeMonthlyHours,
   computeSaturationHeatmap,
   computeWeeklyHours,
   defaultDemandHeatmap,
+  defaultParallelMatrix,
   DEFAULT_AREAS,
   DEFAULT_PRODUCTIVE_RATIO,
   DEFAULT_SCHEDULE,
@@ -59,6 +63,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
+import { Switch } from "@/components/ui/switch";
 
 function rid(prefix = "id") {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
@@ -467,7 +472,10 @@ export default function CapacityPlannerPage() {
         onApplyScale={(fy, v) => updateScale(fy, v)}
         onUpdateHeatmap={(matrix) => updateCapacity({ demandHeatmap: matrix })}
         onUpdateTarget={(t) => updateCapacity({ targetSaturationPct: t })}
+        onUpdateParallelMatrix={(matrix) => updateCapacity({ parallelByCellMatrix: matrix })}
       />
+
+      <SessionsByTenureSection params={params} updateCapacity={updateCapacity} />
 
 
       {/* KPIs par FY */}
@@ -1147,6 +1155,7 @@ function SaturationHeatmapSection({
   onApplyScale,
   onUpdateHeatmap,
   onUpdateTarget,
+  onUpdateParallelMatrix,
 }: {
   params: ModelParams;
   result: ModelResult;
@@ -1160,16 +1169,19 @@ function SaturationHeatmapSection({
   onApplyScale: (fy: number, v: number) => void;
   onUpdateHeatmap: (matrix: number[][]) => void;
   onUpdateTarget: (t: number) => void;
+  onUpdateParallelMatrix: (matrix: number[][]) => void;
 }) {
   const cap = params.capacity;
   const matrix = cap?.demandHeatmap ?? defaultDemandHeatmap();
+  const parallelMatrix = cap?.parallelByCellMatrix;
   const targetSat = cap?.targetSaturationPct ?? 0.75;
   const isDefault = !cap?.demandHeatmap;
+  const isParallelDefault = !cap?.parallelByCellMatrix;
 
   const memEnd = result.monthly[activeFy * 12 + 11]?.subsCount ?? 0;
   const heat = useMemo(
-    () => computeSaturationHeatmap(memEnd, avgSessionsPerMonth, matrix, areas, scale),
-    [memEnd, avgSessionsPerMonth, matrix, areas, scale]
+    () => computeSaturationHeatmap(memEnd, avgSessionsPerMonth, matrix, areas, scale, parallelMatrix),
+    [memEnd, avgSessionsPerMonth, matrix, areas, scale, parallelMatrix]
   );
   const reco = useMemo(() => recommendCapacityStrategy(heat, targetSat), [heat, targetSat]);
 
@@ -1455,6 +1467,226 @@ function SaturationHeatmapSection({
             </div>
           </div>
         </details>
+
+        {/* Bundle 2 — Planning hétérogène (parallèle par cellule) */}
+        <details className="border rounded-md">
+          <summary className="cursor-pointer p-3 text-xs font-semibold uppercase tracking-wider hover:bg-muted/30">
+            Planning hétérogène : nb d&apos;espaces ouverts par créneau{" "}
+            {isParallelDefault ? "(non défini — capacité full)" : "(personnalisé)"}
+          </summary>
+          <div className="p-3 space-y-3 border-t">
+            <p className="text-[10px] text-muted-foreground">
+              <strong>0</strong> = créneau fermé · <strong>1</strong> = espace A seul
+              {areas.length >= 2 ? " · " : null}
+              {areas.length >= 2 ? <><strong>2</strong> = A + B en parallèle</> : null}
+              {areas.length >= 3 ? " · etc." : null}
+              <br />
+              Si non défini, tous les espaces sont supposés ouverts (capacité totale).
+              Personnaliser pour modéliser un planning où on n&apos;ouvre B que sur les pics.
+            </p>
+            <div className="overflow-x-auto">
+              <div className="min-w-[600px]">
+                <div
+                  className="grid gap-1"
+                  style={{ gridTemplateColumns: `40px repeat(${HEATMAP_HOURS.length}, 1fr)` }}
+                >
+                  <div></div>
+                  {HEATMAP_HOURS.map((h) => (
+                    <div key={h} className="text-[10px] text-slate-400 text-center tabular-nums">
+                      {h}h
+                    </div>
+                  ))}
+                </div>
+                {HEATMAP_DAYS.map((label, dow) => (
+                  <div
+                    key={dow}
+                    className="grid gap-1 mt-1"
+                    style={{ gridTemplateColumns: `40px repeat(${HEATMAP_HOURS.length}, 1fr)` }}
+                  >
+                    <div className="text-xs text-slate-600 font-medium flex items-center">
+                      {label}
+                    </div>
+                    {HEATMAP_HOURS.map((h, i) => (
+                      <Input
+                        key={`p-${dow}-${h}`}
+                        type="number"
+                        step="1"
+                        min="0"
+                        max={areas.length}
+                        value={parallelMatrix?.[dow]?.[i] ?? 0}
+                        onChange={(e) => {
+                          const v = parseInt(e.target.value, 10) || 0;
+                          const base = parallelMatrix
+                            ? parallelMatrix.map((r) => [...r])
+                            : Array.from({ length: 7 }, () =>
+                                new Array(HEATMAP_HOURS.length).fill(0)
+                              );
+                          if (!base[dow]) base[dow] = new Array(HEATMAP_HOURS.length).fill(0);
+                          base[dow][i] = Math.max(0, Math.min(v, areas.length));
+                          onUpdateParallelMatrix(base);
+                        }}
+                        className="h-7 px-1 text-[10px] text-center tabular-nums"
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 items-center">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onUpdateParallelMatrix(defaultParallelMatrix())}
+                className="text-[10px] h-7"
+                title="1 espace sur toutes les heures de schedule (CFRG départ)"
+              >
+                Preset 1 espace
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => {
+                  const auto = autoScheduleParallelMatrix(
+                    memEnd,
+                    avgSessionsPerMonth,
+                    matrix,
+                    areas,
+                    scale,
+                    targetSat
+                  );
+                  onUpdateParallelMatrix(auto);
+                }}
+                className="text-[10px] h-7"
+                title={`Calcule auto le nb d'espaces nécessaire par créneau pour rester ≤ ${(targetSat * 100).toFixed(0)}% sat (FY ${fyLabels[activeFy]})`}
+              >
+                <Wand2 className="h-3 w-3 mr-1" />
+                Auto-schedule pour {fyLabels[activeFy]} ({(targetSat * 100).toFixed(0)}% cible)
+              </Button>
+              {parallelMatrix ? (
+                <span className="text-[10px] text-muted-foreground tabular-nums">
+                  Cap mensuelle :{" "}
+                  <strong>
+                    {Math.round(
+                      computeMonthlyCapacityFromMatrix(parallelMatrix, areas, scale)
+                    ).toLocaleString("fr-FR")}
+                  </strong>{" "}
+                  places
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </details>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SessionsByTenureSection({
+  params,
+  updateCapacity,
+}: {
+  params: ModelParams;
+  updateCapacity: (patch: Partial<NonNullable<typeof params.capacity>>) => void;
+}) {
+  const sbt = params.capacity?.sessionsByTenure;
+  const enabled = !!sbt;
+  const fallback = params.capacity?.avgSessionsPerMonth ?? 8;
+  const cohortActive = params.subs.cohortModel?.enabled === true;
+
+  const setEnabled = (next: boolean) => {
+    updateCapacity({
+      sessionsByTenure: next
+        ? { newMember: 5, midTerm: 8, longTerm: 12 }
+        : undefined,
+    });
+  };
+
+  const update = (patch: Partial<NonNullable<typeof params.capacity>["sessionsByTenure"]>) => {
+    updateCapacity({
+      sessionsByTenure: { ...(sbt ?? { newMember: 5, midTerm: 8, longTerm: 12 }), ...patch! },
+    });
+  };
+
+  // Aperçu moyenne pondérée
+  const weighted = enabled && sbt
+    ? avgSessionsWeighted(sbt, fallback, cohortActive)
+    : fallback;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <UsersRound className="h-4 w-4 text-[#D32F2F]" />
+          Sessions/mois par ancienneté membre (Bundle 2)
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Modélise la croissance d&apos;engagement avec l&apos;ancienneté. Membres récents font moins
+          de sessions que les anciens (long-stayers). Si activé + cohort model actif, le
+          capacity-planner utilise la moyenne pondérée.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-xs text-muted-foreground">
+            {enabled ? (
+              <>
+                Moyenne pondérée :{" "}
+                <strong className="text-foreground">{weighted.toFixed(1)}</strong> séances/mo
+                {!cohortActive ? (
+                  <span className="ml-2 text-amber-700">
+                    (cohort model désactivé → fallback {fallback})
+                  </span>
+                ) : null}
+              </>
+            ) : (
+              <>Désactivé — utilise fallback constant {fallback} séances/mo.</>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="tenure-toggle" className="text-xs">
+              {enabled ? "Activé" : "Désactivé"}
+            </Label>
+            <Switch id="tenure-toggle" checked={enabled} onCheckedChange={setEnabled} />
+          </div>
+        </div>
+
+        {enabled && sbt ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <Label className="text-[10px]">Nouveaux (0-3 mois) — sessions/mo</Label>
+              <Input
+                type="number"
+                step="0.5"
+                value={sbt.newMember}
+                onChange={(e) => update({ newMember: parseFloat(e.target.value) || 0 })}
+                className="h-8 text-xs"
+              />
+              <p className="text-[10px] text-muted-foreground mt-0.5">CrossFit typique : 4-6</p>
+            </div>
+            <div>
+              <Label className="text-[10px]">Mid-term (3-12 mois)</Label>
+              <Input
+                type="number"
+                step="0.5"
+                value={sbt.midTerm}
+                onChange={(e) => update({ midTerm: parseFloat(e.target.value) || 0 })}
+                className="h-8 text-xs"
+              />
+              <p className="text-[10px] text-muted-foreground mt-0.5">Engagement stabilisé : 7-10</p>
+            </div>
+            <div>
+              <Label className="text-[10px]">Long-term (12+ mois)</Label>
+              <Input
+                type="number"
+                step="0.5"
+                value={sbt.longTerm}
+                onChange={(e) => update({ longTerm: parseFloat(e.target.value) || 0 })}
+                className="h-8 text-xs"
+              />
+              <p className="text-[10px] text-muted-foreground mt-0.5">Habitués : 10-15+</p>
+            </div>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
