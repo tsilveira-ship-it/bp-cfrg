@@ -24,28 +24,62 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
   // Trajectoire RÉELLE issue de computeModel : intègre cohort, churn par tier,
   // courbe rétention, legacy multi-cohortes, bilan funnel, mix évolutif, pause, etc.
   const result = useMemo(() => computeModel(params), [params]);
-  const monthly = useMemo(
-    () => result.monthly.map((m) => m.subsCount),
-    [result]
-  );
-  // endCounts = subsCount à la fin de chaque FY (mois 11, 23, 35, ...)
-  const endCounts: number[] = useMemo(() => {
-    const out: number[] = [];
-    for (let fy = 0; fy < tl.horizonYears; fy++) {
-      const idx = fy * 12 + 11;
-      out.push(monthly[idx] ?? monthly[monthly.length - 1] ?? 0);
+
+  // Séries mensuelles (new subs / legacy / total)
+  const series = useMemo(() => {
+    const newSubs: number[] = [];
+    const legacy: number[] = [];
+    const total: number[] = [];
+    for (const m of result.monthly) {
+      newSubs.push(m.subsCount);
+      legacy.push(m.legacyCount);
+      total.push(m.subsCount + m.legacyCount);
     }
-    return out;
-  }, [monthly, tl.horizonYears]);
+    return { newSubs, legacy, total };
+  }, [result]);
 
-  const startCount = monthly[0] ?? subs.rampStartCount;
+  // Counts fin de FY (mois 11, 23, 35, ...) — par série
+  const endCountsByKind = useMemo(() => {
+    const fyEnd = (arr: number[]) => {
+      const out: number[] = [];
+      for (let fy = 0; fy < tl.horizonYears; fy++) {
+        const idx = fy * 12 + 11;
+        out.push(arr[idx] ?? arr[arr.length - 1] ?? 0);
+      }
+      return out;
+    };
+    return {
+      newSubs: fyEnd(series.newSubs),
+      legacy: fyEnd(series.legacy),
+      total: fyEnd(series.total),
+    };
+  }, [series, tl.horizonYears]);
 
-  const max = Math.max(...monthly, 1);
+  // Backward-compat alias utilisé par section "Croissance annuelle"
+  const endCounts = endCountsByKind.newSubs;
+
+  const startCounts = {
+    newSubs: series.newSubs[0] ?? 0,
+    legacy: series.legacy[0] ?? 0,
+    total: series.total[0] ?? 0,
+  };
+
   const sparkW = 100;
-  const sparkH = 28;
-  const points = monthly
-    .map((v, i) => `${(i * sparkW) / Math.max(1, monthly.length - 1)},${sparkH - (v / max) * sparkH}`)
-    .join(" ");
+  const sparkH = 32;
+  const max = Math.max(...series.total, 1);
+  const xAt = (i: number) => (i * sparkW) / Math.max(1, series.total.length - 1);
+  const yAt = (v: number) => sparkH - (v / max) * sparkH;
+  const linePath = (arr: number[]) => arr.map((v, i) => `${xAt(i)},${yAt(v)}`).join(" ");
+  const totalPoints = linePath(series.total);
+  const newPoints = linePath(series.newSubs);
+  const legacyPoints = linePath(series.legacy);
+  // Stacked area new (au-dessus de legacy) : path remontant new+legacy puis redescendant legacy
+  const stackedAreaPath = useMemo(() => {
+    const top = series.total.map((_, i) => `${xAt(i)},${yAt(series.total[i])}`);
+    const bottom = series.legacy
+      .map((_, i) => `${xAt(series.total.length - 1 - i)},${yAt(series.legacy[series.total.length - 1 - i])}`);
+    return `M ${top.join(" L ")} L ${bottom.join(" L ")} Z`;
+  }, [series]);
 
   // Mode actif (pour banner contextuel)
   const cohortEnabled = subs.cohortModel?.enabled === true;
@@ -96,13 +130,20 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
         </div>
       </section>
 
-      <section>
+      <section className={cohortEnabled ? "opacity-50" : ""}>
         <div className="flex items-center justify-between mb-3">
           <div>
             <h4 className="font-heading text-sm font-semibold uppercase tracking-wider">
               Ramp-up {tl.fyLabels[0]} ({tl.monthLabels[0]} → {tl.monthLabels[11]})
             </h4>
-            <p className="text-xs text-muted-foreground mt-0.5">Linéaire mois par mois.</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Linéaire mois par mois.
+              {cohortEnabled ? (
+                <span className="ml-2 text-amber-700 font-semibold">
+                  Désactivé — mode cohort actif (acquisitions définies plus bas).
+                </span>
+              ) : null}
+            </p>
           </div>
           <span className="text-xs text-muted-foreground">
             +{fmtNum(subs.rampEndCount - subs.rampStartCount)} membres en 12 mois
@@ -122,7 +163,7 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
         </div>
       </section>
 
-      <section>
+      <section className={cohortEnabled ? "opacity-50" : ""}>
         <div className="flex items-center justify-between mb-3">
           <div>
             <h4 className="font-heading text-sm font-semibold uppercase tracking-wider">
@@ -133,26 +174,44 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
             </p>
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" onClick={() => applyAll(0.20)} className="text-xs h-7">
+            <Button variant="ghost" size="sm" onClick={() => applyAll(0.20)} disabled={cohortEnabled} className="text-xs h-7">
               20%
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => applyAll(0.10)} className="text-xs h-7">
+            <Button variant="ghost" size="sm" onClick={() => applyAll(0.10)} disabled={cohortEnabled} className="text-xs h-7">
               10%
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => applyAll(0)} className="text-xs h-7">
+            <Button variant="ghost" size="sm" onClick={() => applyAll(0)} disabled={cohortEnabled} className="text-xs h-7">
               0%
             </Button>
           </div>
         </div>
+
+        {cohortEnabled ? (
+          <div className="text-xs bg-amber-50 dark:bg-amber-950/20 border border-amber-300 rounded p-3 mb-3 space-y-1">
+            <div className="font-semibold text-amber-800 dark:text-amber-200">
+              Désactivé — mode cohort actif
+            </div>
+            <p className="text-amber-700 dark:text-amber-300">
+              Ces taux de croissance <code>growthRates[]</code> sont <strong>ignorés</strong> par
+              le moteur. La trajectoire est dictée par <code>cohortModel.acquisitionGrowthByFy[]</code>
+              — voir la section <em>Mode cohort</em> ci-dessous pour ajuster les acquisitions.
+            </p>
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {growths.map((g, idx) => (
-            <div key={idx} className="p-3 border rounded-md bg-muted/20 space-y-2">
+            <div
+              key={idx}
+              className={`p-3 border rounded-md space-y-2 ${cohortEnabled ? "bg-muted/10" : "bg-muted/20"}`}
+            >
               <Label className="text-xs font-medium">Croissance {tl.fyLabels[idx + 1]}</Label>
               <div className="relative">
                 <Input
                   type="number"
                   step={1}
                   value={(g * 100).toFixed(1).replace(/\.0$/, "")}
+                  disabled={cohortEnabled}
                   onChange={(e) =>
                     setParams((p) => ({
                       ...p,
@@ -310,18 +369,49 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
           funnel, mix évolutif, pause).
         </p>
         <div className="border rounded-md p-3 bg-muted/10">
+          {/* Légende */}
+          <div className="flex items-center gap-3 mb-2 text-[10px]">
+            <div className="flex items-center gap-1">
+              <span className="inline-block w-3 h-2 rounded-sm bg-[#D32F2F]/30 border border-[#D32F2F]" />
+              <span className="text-muted-foreground">Nouveaux</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="inline-block w-3 h-2 rounded-sm bg-slate-400/30 border border-slate-500" />
+              <span className="text-muted-foreground">Legacy</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="inline-block w-3 h-0.5 bg-[#D32F2F]" />
+              <span className="text-muted-foreground">Total</span>
+            </div>
+          </div>
+
           <svg
             viewBox={`0 0 ${sparkW} ${sparkH}`}
             preserveAspectRatio="none"
-            className="w-full h-16"
+            className="w-full h-20"
           >
-            <polyline fill="none" stroke="#D32F2F" strokeWidth="0.8" points={points} />
+            {/* Aire stack new (entre legacy et total) */}
+            <path d={stackedAreaPath} fill="#D32F2F" fillOpacity="0.15" stroke="none" />
+            {/* Ligne legacy */}
+            <polyline fill="none" stroke="#94a3b8" strokeWidth="0.6" strokeDasharray="1 0.8" points={legacyPoints} />
+            {/* Aire legacy = remplie sous la courbe legacy */}
+            <path
+              d={`M ${xAt(0)},${sparkH} L ${legacyPoints} L ${xAt(series.legacy.length - 1)},${sparkH} Z`}
+              fill="#94a3b8"
+              fillOpacity="0.20"
+              stroke="none"
+            />
+            {/* Ligne total (rouge plein) */}
+            <polyline fill="none" stroke="#D32F2F" strokeWidth="0.9" points={totalPoints} />
+            {/* Ligne new (rouge clair) */}
+            <polyline fill="none" stroke="#D32F2F" strokeWidth="0.5" strokeOpacity="0.5" points={newPoints} />
+            {/* Verticales fin de FY */}
             {Array.from({ length: tl.horizonYears - 1 }, (_, i) => i + 1).map((fy) => (
               <line
                 key={fy}
-                x1={(fy * 12 * sparkW) / Math.max(1, monthly.length - 1)}
+                x1={(fy * 12 * sparkW) / Math.max(1, series.total.length - 1)}
                 y1={0}
-                x2={(fy * 12 * sparkW) / Math.max(1, monthly.length - 1)}
+                x2={(fy * 12 * sparkW) / Math.max(1, series.total.length - 1)}
                 y2={sparkH}
                 stroke="#e5e5e5"
                 strokeWidth="0.3"
@@ -329,15 +419,32 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
               />
             ))}
           </svg>
-          <div className={`grid gap-1 text-[10px] text-muted-foreground mt-2 text-center`} style={{ gridTemplateColumns: `repeat(${tl.horizonYears + 1}, 1fr)` }}>
+          <div
+            className="grid gap-1 text-[10px] text-muted-foreground mt-2 text-center"
+            style={{ gridTemplateColumns: `repeat(${tl.horizonYears + 1}, 1fr)` }}
+          >
             <div>
-              {tl.monthLabels[0]}
-              <div className="text-foreground font-semibold">{fmtNum(startCount)}</div>
+              <div className="text-muted-foreground/80">{tl.monthLabels[0]}</div>
+              <div className="font-mono leading-tight mt-0.5">
+                <div className="text-[var(--color-brand-red,#D32F2F)]">{fmtNum(startCounts.newSubs)}</div>
+                <div className="text-slate-500">+{fmtNum(startCounts.legacy)}</div>
+                <div className="text-foreground font-semibold border-t border-muted-foreground/30 pt-0.5">
+                  {fmtNum(startCounts.total)}
+                </div>
+              </div>
             </div>
             {tl.fyLabels.map((lbl, i) => (
               <div key={lbl}>
-                Fin {lbl}
-                <div className="text-foreground font-semibold">{fmtNum(endCounts[i] ?? 0)}</div>
+                <div className="text-muted-foreground/80">Fin {lbl}</div>
+                <div className="font-mono leading-tight mt-0.5">
+                  <div className="text-[var(--color-brand-red,#D32F2F)]">
+                    {fmtNum(endCountsByKind.newSubs[i] ?? 0)}
+                  </div>
+                  <div className="text-slate-500">+{fmtNum(endCountsByKind.legacy[i] ?? 0)}</div>
+                  <div className="text-foreground font-semibold border-t border-muted-foreground/30 pt-0.5">
+                    {fmtNum(endCountsByKind.total[i] ?? 0)}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
