@@ -540,6 +540,18 @@ export type ModelParams = {
     weeklySchedule?: WeeklySchedule;  // nb cours/jour × type de jour × durée
     scaleByFy?: number[];             // multiplicateur du planning par FY (length = horizonYears)
     coachAllocations?: CoachAllocation[]; // heures allouées par cadre/pool (par FY)
+    /**
+     * Bundle 1 — Heatmap demande hebdo (jour × heure).
+     * Matrix 7 lignes (Lun..Dim, dow 1..7) × 14 colonnes (heure 7..20).
+     * Valeurs = poids relatifs de demande sur ce créneau (0 = créneau fermé).
+     * Si défini, override la distribution uniforme du planning. Permet de
+     * coller à la heatmap de fréquentation réelle (CRM crm.sessions).
+     */
+    demandHeatmap?: number[][];
+    /**
+     * Bundle 1 — Cible saturation pour reco engine. Default 0.75 (= 75%).
+     */
+    targetSaturationPct?: number;
   };
 
   openingCash: number;

@@ -31,20 +31,27 @@ import {
   computeAllocatedHours,
   computeMonthlyCapacitySlots,
   computeMonthlyHours,
+  computeSaturationHeatmap,
   computeWeeklyHours,
+  defaultDemandHeatmap,
   DEFAULT_AREAS,
   DEFAULT_PRODUCTIVE_RATIO,
   DEFAULT_SCHEDULE,
   findBreakEvenHours,
   freelanceCostFromAllocations,
+  HEATMAP_DAYS,
+  HEATMAP_HOURS,
   hoursToFte,
   HOURS_PER_FTE_THEORETICAL,
+  recommendCapacityStrategy,
   type CdiHypothesis,
   type FreelanceHypothesis,
 } from "@/lib/capacity-planner";
 import type {
   CoachAllocation,
   GymArea,
+  ModelParams,
+  ModelResult,
   WeeklySchedule,
 } from "@/lib/model/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -381,20 +388,87 @@ export default function CapacityPlannerPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
-            {fyLabels.map((label, fy) => (
-              <div key={fy}>
-                <Label className="text-xs">{label}</Label>
-                <Input
-                  type="number"
-                  step={0.05}
-                  value={scaleByFy[fy] ?? 1}
-                  onChange={(e) => updateScale(fy, parseFloat(e.target.value) || 0)}
-                />
-              </div>
-            ))}
+            {fyLabels.map((label, fy) => {
+              // Calcul recos auto-saturation 70% / 80% pour ce FY
+              const memEnd = result.monthly[fy * 12 + 11]?.subsCount ?? 0;
+              const baseCap = computeMonthlyCapacitySlots(areas, schedule, 1);
+              const demand = memEnd * avgSessionsPerMonth;
+              const reco70 = baseCap > 0 ? demand / (0.70 * baseCap) : 0;
+              const reco80 = baseCap > 0 ? demand / (0.80 * baseCap) : 0;
+              const reco = scaleByFy[fy] ?? 1;
+              const sat = baseCap > 0 ? demand / (baseCap * reco) : 0;
+              return (
+                <div key={fy} className="space-y-1">
+                  <Label className="text-xs">{label}</Label>
+                  <Input
+                    type="number"
+                    step={0.05}
+                    value={reco}
+                    onChange={(e) => updateScale(fy, parseFloat(e.target.value) || 0)}
+                  />
+                  <div className="text-[9px] text-muted-foreground leading-tight space-y-0.5">
+                    <div>
+                      Sat actuelle:{" "}
+                      <span
+                        className={
+                          sat > 1
+                            ? "text-red-600 font-semibold"
+                            : sat >= 0.7
+                              ? "text-emerald-600 font-semibold"
+                              : ""
+                        }
+                      >
+                        {(sat * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        className="text-emerald-700 hover:underline tabular-nums"
+                        onClick={() => updateScale(fy, Math.round(reco70 * 100) / 100)}
+                        title="Auto-set scale pour 70% sat"
+                      >
+                        70%: {reco70.toFixed(2)}
+                      </button>
+                      <span className="text-muted-foreground/50">·</span>
+                      <button
+                        type="button"
+                        className="text-amber-700 hover:underline tabular-nums"
+                        onClick={() => updateScale(fy, Math.round(reco80 * 100) / 100)}
+                        title="Auto-set scale pour 80% sat"
+                      >
+                        80%: {reco80.toFixed(2)}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
+          <p className="text-[10px] text-muted-foreground mt-3">
+            <strong>Sat actuelle</strong> = membres × 8 sessions / capacité base × scale.
+            Cliquer sur <code className="text-emerald-700">70%</code> ou{" "}
+            <code className="text-amber-700">80%</code> pour appliquer le scale recommandé.
+          </p>
         </CardContent>
       </Card>
+
+      {/* Bundle 1 — Heatmap saturation projetée + manuelle */}
+      <SaturationHeatmapSection
+        params={params}
+        result={result}
+        scale={scaleByFy[activeFy] ?? 1}
+        areas={areas}
+        schedule={schedule}
+        avgSessionsPerMonth={avgSessionsPerMonth}
+        activeFy={activeFy}
+        setActiveFy={setActiveFy}
+        fyLabels={fyLabels}
+        onApplyScale={(fy, v) => updateScale(fy, v)}
+        onUpdateHeatmap={(matrix) => updateCapacity({ demandHeatmap: matrix })}
+        onUpdateTarget={(t) => updateCapacity({ targetSaturationPct: t })}
+      />
+
 
       {/* KPIs par FY */}
       <Card>
@@ -1051,6 +1125,336 @@ function FteComparisonSection({
             </li>
           </ul>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================================
+// Bundle 1 — Section Heatmap saturation projetée + heatmap manuelle
+// ============================================================================
+
+function SaturationHeatmapSection({
+  params,
+  result,
+  scale,
+  areas,
+  schedule,
+  avgSessionsPerMonth,
+  activeFy,
+  setActiveFy,
+  fyLabels,
+  onApplyScale,
+  onUpdateHeatmap,
+  onUpdateTarget,
+}: {
+  params: ModelParams;
+  result: ModelResult;
+  scale: number;
+  areas: GymArea[];
+  schedule: WeeklySchedule;
+  avgSessionsPerMonth: number;
+  activeFy: number;
+  setActiveFy: (fy: number) => void;
+  fyLabels: string[];
+  onApplyScale: (fy: number, v: number) => void;
+  onUpdateHeatmap: (matrix: number[][]) => void;
+  onUpdateTarget: (t: number) => void;
+}) {
+  const cap = params.capacity;
+  const matrix = cap?.demandHeatmap ?? defaultDemandHeatmap();
+  const targetSat = cap?.targetSaturationPct ?? 0.75;
+  const isDefault = !cap?.demandHeatmap;
+
+  const memEnd = result.monthly[activeFy * 12 + 11]?.subsCount ?? 0;
+  const heat = useMemo(
+    () => computeSaturationHeatmap(memEnd, avgSessionsPerMonth, matrix, areas, scale),
+    [memEnd, avgSessionsPerMonth, matrix, areas, scale]
+  );
+  const reco = useMemo(() => recommendCapacityStrategy(heat, targetSat), [heat, targetSat]);
+
+  // Couleur par saturation
+  const cellClass = (sat: number, weight: number): string => {
+    if (weight === 0) return "bg-slate-50 text-slate-300";
+    if (sat > 1.2) return "bg-red-600 text-white";
+    if (sat > 1) return "bg-red-400 text-white";
+    if (sat > 0.85) return "bg-amber-400 text-amber-900";
+    if (sat > 0.6) return "bg-emerald-400 text-emerald-900";
+    if (sat > 0.3) return "bg-emerald-200 text-emerald-800";
+    return "bg-emerald-50 text-emerald-700";
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <CalendarClock className="h-4 w-4 text-[#D32F2F]" />
+          Heatmap saturation projetée — {fyLabels[activeFy]}
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Saturation par créneau (jour × heure) au FY sélectionné. Vert = optimal, ambre = tension,
+          rouge = surcharge. Demande répartie selon la heatmap (poids relatifs).
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Sélecteur FY + cible saturation */}
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <Label className="text-xs">FY analysé</Label>
+            <div className="flex gap-1 mt-1">
+              {fyLabels.map((label, fy) => (
+                <Button
+                  key={fy}
+                  variant={fy === activeFy ? "default" : "outline"}
+                  size="sm"
+                  className="text-xs h-7 px-2"
+                  onClick={() => setActiveFy(fy)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Cible saturation (%)</Label>
+            <Input
+              type="number"
+              step="5"
+              min="40"
+              max="100"
+              value={(targetSat * 100).toFixed(0)}
+              onChange={(e) => onUpdateTarget((parseFloat(e.target.value) || 75) / 100)}
+              className="h-7 w-24 text-xs"
+            />
+          </div>
+        </div>
+
+        {/* Reco engine card */}
+        <div
+          className={
+            "p-3 rounded border-l-4 " +
+            (reco.type === "ok"
+              ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/20"
+              : reco.type === "overflow"
+                ? "border-red-600 bg-red-50 dark:bg-red-950/20"
+                : "border-amber-600 bg-amber-50 dark:bg-amber-950/20")
+          }
+        >
+          <div className="flex items-start gap-2">
+            {reco.type === "ok" ? (
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+            )}
+            <div className="flex-1 space-y-2">
+              <p className="text-xs">{reco.message}</p>
+              {reco.type !== "ok" ? (
+                <div className="flex flex-wrap gap-2">
+                  {reco.suggestedScaleGlobal ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-[10px]"
+                      onClick={() =>
+                        onApplyScale(activeFy, Math.round(reco.suggestedScaleGlobal! * 100) / 100)
+                      }
+                    >
+                      Appliquer scale global {reco.suggestedScaleGlobal.toFixed(2)}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+              {reco.hotCells.length > 0 ? (
+                <div className="text-[10px] text-muted-foreground">
+                  Top créneaux en tension :{" "}
+                  {reco.hotCells.slice(0, 5).map((c, i) => (
+                    <span key={i} className="font-mono">
+                      {HEATMAP_DAYS[c.dow]} {c.hour}h ({(c.saturation * 100).toFixed(0)}%)
+                      {i < Math.min(4, reco.hotCells.length - 1) ? ", " : ""}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        {/* Stats globales */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <Stat
+            label="Demande totale/mo"
+            value={Math.round(heat.totalDemand)}
+            suffix=" places"
+          />
+          <Stat
+            label="Capacité totale/mo"
+            value={Math.round(heat.totalCapacity)}
+            suffix=" places"
+          />
+          <Stat
+            label="Saturation moyenne"
+            value={Math.round(heat.avgSaturation * 100)}
+            suffix="%"
+          />
+          <Stat
+            label="Saturation pic"
+            value={Math.round(heat.maxSaturation * 100)}
+            suffix="%"
+          />
+        </div>
+
+        {/* Heatmap grid */}
+        <div className="border rounded-md p-3 bg-muted/10 overflow-x-auto">
+          <div className="min-w-[600px]">
+            <div
+              className="grid gap-1"
+              style={{
+                gridTemplateColumns: `40px repeat(${HEATMAP_HOURS.length}, 1fr)`,
+              }}
+            >
+              <div></div>
+              {HEATMAP_HOURS.map((h) => (
+                <div key={h} className="text-[10px] text-slate-400 text-center tabular-nums">
+                  {h}h
+                </div>
+              ))}
+            </div>
+            {HEATMAP_DAYS.map((label, dow) => (
+              <div
+                key={dow}
+                className="grid gap-1 mt-1"
+                style={{
+                  gridTemplateColumns: `40px repeat(${HEATMAP_HOURS.length}, 1fr)`,
+                }}
+              >
+                <div className="text-xs text-slate-600 font-medium flex items-center">
+                  {label}
+                </div>
+                {HEATMAP_HOURS.map((h, i) => {
+                  const cell = heat.cells.find((c) => c.dow === dow && c.hour === h)!;
+                  const cls = cellClass(cell.saturation, cell.weight);
+                  return (
+                    <div
+                      key={`${dow}-${h}`}
+                      className={`aspect-square flex items-center justify-center text-[10px] font-semibold rounded-sm tabular-nums ${cls}`}
+                      title={
+                        cell.weight > 0
+                          ? `${label} ${h}h\nDemande: ${cell.demandSlot.toFixed(0)} places/mo\nCapacité: ${cell.capacitySlot.toFixed(0)} places/mo\nSaturation: ${(cell.saturation * 100).toFixed(0)}%`
+                          : `${label} ${h}h — créneau fermé`
+                      }
+                    >
+                      {cell.weight > 0 ? `${(cell.saturation * 100).toFixed(0)}` : ""}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Heatmap manuelle (poids demande) */}
+        <details className="border rounded-md">
+          <summary className="cursor-pointer p-3 text-xs font-semibold uppercase tracking-wider hover:bg-muted/30">
+            Édition heatmap demande {isDefault ? "(défaut — clique pour personnaliser)" : "(personnalisée)"}
+          </summary>
+          <div className="p-3 space-y-3 border-t">
+            <p className="text-[10px] text-muted-foreground">
+              Poids relatifs de la demande par créneau. <strong>0 = créneau fermé</strong>. Une
+              valeur élevée = créneau très demandé. La distribution mensuelle de la demande totale
+              (membres × {avgSessionsPerMonth}) est ventilée selon ces poids.
+            </p>
+            <div className="overflow-x-auto">
+              <div className="min-w-[600px]">
+                <div
+                  className="grid gap-1"
+                  style={{ gridTemplateColumns: `40px repeat(${HEATMAP_HOURS.length}, 1fr)` }}
+                >
+                  <div></div>
+                  {HEATMAP_HOURS.map((h) => (
+                    <div key={h} className="text-[10px] text-slate-400 text-center tabular-nums">
+                      {h}h
+                    </div>
+                  ))}
+                </div>
+                {HEATMAP_DAYS.map((label, dow) => (
+                  <div
+                    key={dow}
+                    className="grid gap-1 mt-1"
+                    style={{ gridTemplateColumns: `40px repeat(${HEATMAP_HOURS.length}, 1fr)` }}
+                  >
+                    <div className="text-xs text-slate-600 font-medium flex items-center">
+                      {label}
+                    </div>
+                    {HEATMAP_HOURS.map((h, i) => (
+                      <Input
+                        key={`${dow}-${h}`}
+                        type="number"
+                        step="0.1"
+                        value={matrix[dow]?.[i] ?? 0}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value) || 0;
+                          const next = matrix.map((r) => [...r]);
+                          if (!next[dow]) next[dow] = new Array(HEATMAP_HOURS.length).fill(0);
+                          next[dow][i] = Math.max(0, v);
+                          onUpdateHeatmap(next);
+                        }}
+                        className="h-7 px-1 text-[10px] text-center tabular-nums"
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onUpdateHeatmap(defaultDemandHeatmap())}
+                className="text-[10px] h-7"
+              >
+                Reset preset par défaut
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  // Preset : 21h pics fortes (Lun/Mer/Ven 7h-8h + 18h-21h, Mar/Jeu 18h-21h)
+                  const m: number[][] = Array.from({ length: 7 }, () =>
+                    new Array(HEATMAP_HOURS.length).fill(0)
+                  );
+                  const peakHours = [7, 18, 19, 20];
+                  const offHoursSoir = [12];
+                  for (let dow = 0; dow < 5; dow++) {
+                    for (const h of peakHours) {
+                      m[dow][HEATMAP_HOURS.indexOf(h)] = 2.0;
+                    }
+                    for (const h of offHoursSoir) {
+                      m[dow][HEATMAP_HOURS.indexOf(h)] = 0.8;
+                    }
+                  }
+                  // weekend matin
+                  for (const h of [9, 10, 11]) {
+                    m[5][HEATMAP_HOURS.indexOf(h)] = 1.5;
+                    m[6][HEATMAP_HOURS.indexOf(h)] = 1.2;
+                  }
+                  onUpdateHeatmap(m);
+                }}
+                className="text-[10px] h-7"
+              >
+                Preset CFRG (21h pics)
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled
+                className="text-[10px] h-7 cursor-not-allowed opacity-50"
+                title="Bientôt dispo — extraction crm.sessions du dashboard"
+              >
+                Importer heatmap CRM (V2)
+              </Button>
+            </div>
+          </div>
+        </details>
       </CardContent>
     </Card>
   );
