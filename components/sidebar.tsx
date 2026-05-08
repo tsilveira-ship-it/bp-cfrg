@@ -41,6 +41,7 @@ import {
   LineChart,
   Users,
   Filter,
+  Skull,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "@/components/user-menu";
@@ -53,6 +54,7 @@ type Item = {
   icon: typeof BarChart3;
   // Modes où l'item apparaît. Si non défini, visible uniquement en "all".
   modes?: ("build" | "analyze")[];
+  adminOnly?: boolean;
 };
 type Group = {
   title: string;
@@ -92,6 +94,7 @@ const GROUPS: Group[] = [
       { href: "/health-check", label: "Health check", icon: HeartPulse, modes: [...ALL] },
       { href: "/cross-checks", label: "Cross-checks", icon: ShieldCheck, modes: ["analyze"] },
       { href: "/audit", label: "Audit & risques", icon: ShieldAlert, modes: [...ALL] },
+      { href: "/vc-devil", label: "VC Devil's advocate", icon: Skull, modes: [...ALL], adminOnly: true },
     ],
   },
   {
@@ -220,7 +223,7 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
 
   const filteredGroups = GROUPS.map((g) => ({
     ...g,
-    items: g.items.filter((it) => isVisibleInMode(it, mode)),
+    items: g.items.filter((it) => isVisibleInMode(it, mode) && (!it.adminOnly || isAdmin)),
   })).filter((g) => g.items.length > 0);
 
   const groups = isAdmin
