@@ -1,5 +1,10 @@
 import { computeModel } from "./model/compute";
 import type { ModelParams } from "./model/types";
+import {
+  SENSITIVITY_BOUNDS,
+  clampBound,
+  DEFAULT_MAX_OPENING_DELAY_MONTHS,
+} from "./sensitivity-bounds";
 
 /**
  * Tornado / one-at-a-time sensitivity.
@@ -57,26 +62,33 @@ export type TornadoBar = {
 export type TornadoConfig = {
   shockPct: number;       // ex 0.10 = ±10%
   metric: TornadoMetric;
+  /**
+   * Mois max de retard d'ouverture utilisés par le driver `openingDelay`.
+   * À shock positif (+shockPct), on applique ce nombre de mois de retard ;
+   * à shock négatif, l'ouverture est considérée à l'heure (0 mois).
+   * Default = DEFAULT_MAX_OPENING_DELAY_MONTHS pour rester aligné avec Monte Carlo.
+   */
+  maxOpeningDelayMonths?: number;
 };
 
-function applyShock(p: ModelParams, driverId: string, shock: number): ModelParams {
+function applyShock(p: ModelParams, driverId: string, shock: number, maxOpeningDelayMonths: number): ModelParams {
   const out: ModelParams = structuredClone(p);
   const factor = 1 + shock;
   switch (driverId) {
     case "subsGrowth":
       if (out.subs.growthRates) {
-        out.subs.growthRates = out.subs.growthRates.map((g) => Math.max(-0.5, Math.min(5, g * factor)));
+        out.subs.growthRates = out.subs.growthRates.map((g) => clampBound(g * factor, SENSITIVITY_BOUNDS.subsGrowth));
       }
       break;
     case "rampEnd":
       out.subs.rampEndCount = Math.max(out.subs.rampStartCount, out.subs.rampEndCount * factor);
       break;
     case "priceIndex":
-      out.subs.priceIndexPa = Math.max(-0.1, Math.min(0.5, out.subs.priceIndexPa * factor));
+      out.subs.priceIndexPa = clampBound(out.subs.priceIndexPa * factor, SENSITIVITY_BOUNDS.priceIndexPa);
       break;
     case "churn":
       if (out.subs.monthlyChurnPct !== undefined) {
-        out.subs.monthlyChurnPct = Math.max(0, Math.min(0.5, out.subs.monthlyChurnPct * factor));
+        out.subs.monthlyChurnPct = clampBound(out.subs.monthlyChurnPct * factor, SENSITIVITY_BOUNDS.monthlyChurnPct);
       }
       break;
     case "mixPremiumShift": {
@@ -94,55 +106,57 @@ function applyShock(p: ModelParams, driverId: string, shock: number): ModelParam
     }
     case "conversionBilan":
       if (out.subs.bilanFunnel?.enabled) {
-        out.subs.bilanFunnel.conversionPct = Math.max(0, Math.min(1, out.subs.bilanFunnel.conversionPct * factor));
+        out.subs.bilanFunnel.conversionPct = clampBound(out.subs.bilanFunnel.conversionPct * factor, SENSITIVITY_BOUNDS.conversionPct);
       }
       break;
     case "capacityPerClass":
       if (out.capacity) {
-        out.capacity.capacityPerClass = Math.max(1, out.capacity.capacityPerClass * factor);
+        out.capacity.capacityPerClass = Math.max(SENSITIVITY_BOUNDS.capacityPerClass.min, out.capacity.capacityPerClass * factor);
       }
       break;
     case "parallelClasses":
       if (out.capacity) {
-        out.capacity.parallelClasses = Math.max(1, Math.round(out.capacity.parallelClasses * factor));
+        out.capacity.parallelClasses = Math.max(SENSITIVITY_BOUNDS.parallelClasses.min, Math.round(out.capacity.parallelClasses * factor));
       }
       break;
     case "salaryIndex":
-      out.salaries.annualIndexPa = Math.max(-0.05, Math.min(0.3, out.salaries.annualIndexPa * factor));
+      out.salaries.annualIndexPa = clampBound(out.salaries.annualIndexPa * factor, SENSITIVITY_BOUNDS.salaryIndexPa);
       break;
     case "chargesPatro":
-      out.salaries.chargesPatroPct = Math.max(0, Math.min(1, out.salaries.chargesPatroPct * factor));
+      out.salaries.chargesPatroPct = clampBound(out.salaries.chargesPatroPct * factor, SENSITIVITY_BOUNDS.chargesPatroPct);
       break;
     case "marketing":
-      out.marketing.monthlyBudget = Math.max(0, out.marketing.monthlyBudget * factor);
+      out.marketing.monthlyBudget = Math.max(SENSITIVITY_BOUNDS.marketingMonthly.min, out.marketing.monthlyBudget * factor);
       break;
     case "rent":
-      out.rent.monthlyByFy = out.rent.monthlyByFy.map((v) => Math.max(0, v * factor));
+      out.rent.monthlyByFy = out.rent.monthlyByFy.map((v) => Math.max(SENSITIVITY_BOUNDS.rentMonthly.min, v * factor));
       break;
     case "isRate":
-      out.tax.isRate = Math.max(0, Math.min(0.5, out.tax.isRate * factor));
+      out.tax.isRate = clampBound(out.tax.isRate * factor, SENSITIVITY_BOUNDS.isRate);
       break;
     case "loanRate":
       if (Array.isArray(out.financing.loans)) {
         out.financing.loans = out.financing.loans.map((l) => ({
           ...l,
-          annualRatePct: Math.max(0, Math.min(25, l.annualRatePct * factor)),
+          annualRatePct: clampBound(l.annualRatePct * factor, SENSITIVITY_BOUNDS.loanRatePct),
         }));
       }
       if (Array.isArray(out.financing.bonds)) {
         out.financing.bonds = out.financing.bonds.map((b) => ({
           ...b,
-          annualRatePct: Math.max(0, Math.min(25, b.annualRatePct * factor)),
+          annualRatePct: clampBound(b.annualRatePct * factor, SENSITIVITY_BOUNDS.loanRatePct),
         }));
       }
       break;
     case "openingDelay": {
-      // Mappe shockPct → mois de retard. shockPct = 0.10 → ±3 mois (ou approchant)
-      const months = Math.round(shock * 30); // 0.10 → 3 mois
+      // Choc positif → retard maximal; choc négatif → ouverture à l'heure.
+      // Mois de retard = max(0, shock) × maxOpeningDelayMonths, paramétrable
+      // (alignement avec Monte Carlo qui tire dans [0, maxOpeningDelayMonths]).
+      const months = Math.max(0, shock) * maxOpeningDelayMonths;
       const lostFraction = Math.max(0, Math.min(1, months / 12));
       out.subs.rampStartCount = out.subs.rampStartCount * (1 - lostFraction);
       out.subs.rampEndCount = out.subs.rampEndCount * (1 - lostFraction * 0.5);
-      out.marketing.monthlyBudget = out.marketing.monthlyBudget * (1 - Math.max(0, lostFraction));
+      out.marketing.monthlyBudget = out.marketing.monthlyBudget * (1 - lostFraction);
       break;
     }
   }
@@ -178,12 +192,13 @@ export function runTornado(
   const baseResult = computeModel(base);
   const baseValue = extractMetric(baseResult, config.metric);
   const shock = Math.abs(config.shockPct);
+  const maxOpeningDelayMonths = config.maxOpeningDelayMonths ?? DEFAULT_MAX_OPENING_DELAY_MONTHS;
 
   const bars: TornadoBar[] = [];
   for (const d of drivers) {
     if (!d.enabled) continue;
-    const lowParams = applyShock(base, d.id, -shock);
-    const highParams = applyShock(base, d.id, +shock);
+    const lowParams = applyShock(base, d.id, -shock, maxOpeningDelayMonths);
+    const highParams = applyShock(base, d.id, +shock, maxOpeningDelayMonths);
     const lowResult = computeModel(lowParams);
     const highResult = computeModel(highParams);
     const lowValue = extractMetric(lowResult, config.metric);

@@ -144,6 +144,9 @@ export const DEFAULT_PARAMS: ModelParams = {
     daYears: 5,
     amortYearsEquipment: 5,
     amortYearsTravaux: 10,
+    // % d'OPEX (hors salaires) avec TVA déductible quand `enableVat` est actif.
+    // Surface explicite pour éviter un default silencieux côté compute.ts.
+    vatDeductibleOpexPct: 0.5,
   },
 
   bfr: { daysOfRevenue: 0 },

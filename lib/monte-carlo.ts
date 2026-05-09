@@ -1,5 +1,10 @@
 import { computeModel } from "./model/compute";
 import type { ModelParams, ModelResult } from "./model/types";
+import {
+  SENSITIVITY_BOUNDS,
+  clampBound,
+  DEFAULT_MAX_OPENING_DELAY_MONTHS,
+} from "./sensitivity-bounds";
 
 export type MCDistribution = "uniform" | "normal" | "triangular";
 
@@ -54,7 +59,7 @@ export type MCConfig = {
   distribution?: MCDistribution;
   /** Active corrélation par catégorie (default true). */
   enableCorrelation?: boolean;
-  /** Retard d'ouverture max en mois (default 6). Le driver `openingDelay` tire dans [0, max]. */
+  /** Retard d'ouverture max en mois (default DEFAULT_MAX_OPENING_DELAY_MONTHS). Le driver `openingDelay` tire dans [0, max]. */
   maxOpeningDelayMonths?: number;
 };
 
@@ -226,7 +231,7 @@ function sampleParams(
     const r = get("subsGrowth")!.rangePct;
     p.subs.growthRates = p.subs.growthRates.map((g) => {
       const f = jitter(rng, r, distribution, 0, 0);
-      return clamp(g * f, -0.5, 5);
+      return clampBound(g * f, SENSITIVITY_BOUNDS.subsGrowth);
     });
   }
   if (enabled.has("rampEnd")) {
@@ -234,10 +239,10 @@ function sampleParams(
     p.subs.rampEndCount = Math.max(p.subs.rampStartCount, p.subs.rampEndCount * f);
   }
   if (enabled.has("priceIndex")) {
-    p.subs.priceIndexPa = clamp(p.subs.priceIndexPa * tirer("priceIndex"), -0.1, 0.5);
+    p.subs.priceIndexPa = clampBound(p.subs.priceIndexPa * tirer("priceIndex"), SENSITIVITY_BOUNDS.priceIndexPa);
   }
   if (enabled.has("churn") && p.subs.monthlyChurnPct !== undefined) {
-    p.subs.monthlyChurnPct = clamp(p.subs.monthlyChurnPct * tirer("churn"), 0, 0.5);
+    p.subs.monthlyChurnPct = clampBound(p.subs.monthlyChurnPct * tirer("churn"), SENSITIVITY_BOUNDS.monthlyChurnPct);
   }
   if (enabled.has("mixPremiumShift") && p.subs.tiers.length >= 2) {
     // Bascule un % de mix du tier le moins cher vers le plus cher
@@ -252,55 +257,54 @@ function sampleParams(
     premiumInModel.mixPct = clamp(premiumInModel.mixPct + shift, 0, 1);
   }
   if (enabled.has("conversionBilan") && p.subs.bilanFunnel?.enabled) {
-    p.subs.bilanFunnel.conversionPct = clamp(
+    p.subs.bilanFunnel.conversionPct = clampBound(
       p.subs.bilanFunnel.conversionPct * tirer("conversionBilan"),
-      0,
-      1
+      SENSITIVITY_BOUNDS.conversionPct
     );
   }
 
   // ───────── Capacity ─────────
   if (enabled.has("capacityPerClass") && p.capacity) {
-    p.capacity.capacityPerClass = Math.max(1, p.capacity.capacityPerClass * tirer("capacityPerClass"));
+    p.capacity.capacityPerClass = Math.max(SENSITIVITY_BOUNDS.capacityPerClass.min, p.capacity.capacityPerClass * tirer("capacityPerClass"));
   }
   if (enabled.has("parallelClasses") && p.capacity) {
-    p.capacity.parallelClasses = Math.max(1, Math.round(p.capacity.parallelClasses * tirer("parallelClasses")));
+    p.capacity.parallelClasses = Math.max(SENSITIVITY_BOUNDS.parallelClasses.min, Math.round(p.capacity.parallelClasses * tirer("parallelClasses")));
   }
 
   // ───────── Costs ─────────
   if (enabled.has("salaryIndex")) {
-    p.salaries.annualIndexPa = clamp(p.salaries.annualIndexPa * tirer("salaryIndex"), -0.05, 0.3);
+    p.salaries.annualIndexPa = clampBound(p.salaries.annualIndexPa * tirer("salaryIndex"), SENSITIVITY_BOUNDS.salaryIndexPa);
   }
   if (enabled.has("chargesPatro")) {
-    p.salaries.chargesPatroPct = clamp(p.salaries.chargesPatroPct * tirer("chargesPatro"), 0, 1);
+    p.salaries.chargesPatroPct = clampBound(p.salaries.chargesPatroPct * tirer("chargesPatro"), SENSITIVITY_BOUNDS.chargesPatroPct);
   }
   if (enabled.has("marketing")) {
-    p.marketing.monthlyBudget = Math.max(0, p.marketing.monthlyBudget * tirer("marketing"));
+    p.marketing.monthlyBudget = Math.max(SENSITIVITY_BOUNDS.marketingMonthly.min, p.marketing.monthlyBudget * tirer("marketing"));
   }
   if (enabled.has("rent") && p.rent.monthlyByFy.length > 0) {
     const f = tirer("rent");
-    p.rent.monthlyByFy = p.rent.monthlyByFy.map((v) => Math.max(0, v * f));
+    p.rent.monthlyByFy = p.rent.monthlyByFy.map((v) => Math.max(SENSITIVITY_BOUNDS.rentMonthly.min, v * f));
   }
 
   // ───────── Tax / financing ─────────
   if (enabled.has("isRate")) {
-    p.tax.isRate = clamp(p.tax.isRate * tirer("isRate"), 0, 0.5);
+    p.tax.isRate = clampBound(p.tax.isRate * tirer("isRate"), SENSITIVITY_BOUNDS.isRate);
   }
   if (enabled.has("vatRate")) {
-    p.subs.vatRate = clamp(p.subs.vatRate * tirer("vatRate"), 0, 0.4);
+    p.subs.vatRate = clampBound(p.subs.vatRate * tirer("vatRate"), SENSITIVITY_BOUNDS.vatRate);
   }
   if (enabled.has("loanRate") && p.financing) {
     const f = tirer("loanRate");
     if (Array.isArray(p.financing.loans)) {
       p.financing.loans = p.financing.loans.map((l) => ({
         ...l,
-        annualRatePct: clamp(l.annualRatePct * f, 0, 25),
+        annualRatePct: clampBound(l.annualRatePct * f, SENSITIVITY_BOUNDS.loanRatePct),
       }));
     }
     if (Array.isArray(p.financing.bonds)) {
       p.financing.bonds = p.financing.bonds.map((b) => ({
         ...b,
-        annualRatePct: clamp(b.annualRatePct * f, 0, 25),
+        annualRatePct: clampBound(b.annualRatePct * f, SENSITIVITY_BOUNDS.loanRatePct),
       }));
     }
   }
@@ -362,7 +366,7 @@ export function runMonteCarlo(base: ModelParams, config: MCConfig): MCAggregate 
   const rng = makeRng(config.seed);
   const distribution: MCDistribution = config.distribution ?? "uniform";
   const enableCorrelation = config.enableCorrelation ?? true;
-  const maxOpeningDelayMonths = config.maxOpeningDelayMonths ?? 6;
+  const maxOpeningDelayMonths = config.maxOpeningDelayMonths ?? DEFAULT_MAX_OPENING_DELAY_MONTHS;
   const samples: MCSampleResult[] = [];
   let firstResult: ModelResult | null = null;
 

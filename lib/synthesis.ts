@@ -1,4 +1,5 @@
 import type { ModelResult, ModelParams } from "./model/types";
+import { CASH_THRESHOLDS, SALARY_RATIO_THRESHOLDS } from "./thresholds";
 
 export function generateSynthesis(result: ModelResult, params: ModelParams): string {
   const first = result.yearly[0];
@@ -33,7 +34,7 @@ export function generateSynthesis(result: ModelResult, params: ModelParams): str
   const cashStatus =
     result.cashTroughValue < 0
       ? `Trésorerie négative au point bas (${f(result.cashTroughValue)} en ${cashTroughLabel}) — financement supplémentaire ou découvert nécessaire.`
-      : result.cashTroughValue < 50000
+      : result.cashTroughValue < CASH_THRESHOLDS.comfortEur
       ? `Trésorerie tendue au point bas (${f(result.cashTroughValue)} en ${cashTroughLabel}) — buffer fragile.`
       : `Trésorerie confortable, point bas ${f(result.cashTroughValue)} en ${cashTroughLabel}.`;
 
@@ -45,9 +46,9 @@ export function generateSynthesis(result: ModelResult, params: ModelParams): str
       : `EBITDA encore négatif en fin d'horizon — modèle non rentable sur la période.`;
 
   const salariesStatus =
-    salariesPct > 50
+    salariesPct > SALARY_RATIO_THRESHOLDS.veryHighPct * 100
       ? `Masse salariale très élevée (${salariesPct.toFixed(0)}% du CA en ${last.label}) — prioriser optimisation.`
-      : salariesPct > 35
+      : salariesPct > SALARY_RATIO_THRESHOLDS.heavyPct * 100
       ? `Masse salariale lourde (${salariesPct.toFixed(0)}% du CA en ${last.label}) — surveiller.`
       : `Masse salariale maîtrisée (${salariesPct.toFixed(0)}% du CA en ${last.label}).`;
 
