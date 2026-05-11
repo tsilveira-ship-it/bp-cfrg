@@ -1,5 +1,5 @@
 "use client";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { ParamNumber } from "@/components/param-input";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { fmtNum } from "@/lib/format";
 import { buildTimeline, type ModelParams } from "@/lib/model/types";
-import { solveAcquisitionsFromNetTarget, computeModel } from "@/lib/model/compute";
+import {
+  solveAcquisitionsFromNetTarget,
+  computeModel,
+  expectedRetentionMonths,
+} from "@/lib/model/compute";
 import { Sparkles, Layers } from "lucide-react";
 
 type Props = {
@@ -18,6 +22,20 @@ type Props = {
 
 export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
   const { subs, timeline } = params;
+  // Mode expert : si false (default), masque les sections Niveau 6 avancées (cohort,
+  // bilan funnel, courbe rétention, mix évolutif, canaux, saisonnalité acquisition/churn).
+  // Préserve la lisibilité pour utilisateur débutant qui veut juste le ramp + growth.
+  // Localstorage pour persister la préférence entre sessions.
+  const [expertMode, setExpertMode] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("bpcfrg-expert-mode") === "true";
+  });
+  const toggleExpert = (v: boolean) => {
+    setExpertMode(v);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("bpcfrg-expert-mode", String(v));
+    }
+  };
   const tl = buildTimeline(timeline.startYear, timeline.horizonYears);
   const growths = subs.growthRates ?? [];
 
@@ -37,6 +55,34 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
     }
     return { newSubs, legacy, total };
   }, [result]);
+
+  // Niveau 6 — Séries dérivées pour le live preview multipanel.
+  // Permet à l'utilisateur de voir l'impact de chaque levier (cohort, churn, mix, pause)
+  // sur revenu / saturation capacité / cumul EBITDA / LTV-CAC en parallèle des counts.
+  const derivedSeries = useMemo(() => {
+    const revenue = result.monthly.map((m) => m.totalRevenue);
+    const ebitda = result.monthly.map((m) => m.ebitda);
+    const cumEbitda: number[] = [];
+    let acc = 0;
+    for (const e of ebitda) {
+      acc += e;
+      cumEbitda.push(acc);
+    }
+    // Saturation projetée si params.capacity défini. Sinon série de zéros.
+    const cap = params.capacity;
+    const saturation: number[] = result.monthly.map((m, idx) => {
+      if (!cap || !cap.avgSessionsPerMonth) return 0;
+      const demand = (m.subsCount + m.legacyCount) * cap.avgSessionsPerMonth;
+      // Approx capacity offered: parallelClasses × capacityPerClass × ~30 cours/mois × scaleByFy
+      const fy = Math.floor(idx / 12);
+      const scale = cap.scaleByFy?.[fy] ?? 1;
+      const capPerHour = (cap.parallelClasses ?? 1) * (cap.capacityPerClass ?? 14);
+      // Hypothèse simplifiée: 30 créneaux/sem × 4.3 sem/mois = 129 créneaux/mois
+      const offered = capPerHour * 129 * scale;
+      return offered > 0 ? demand / offered : 0;
+    });
+    return { revenue, cumEbitda, saturation };
+  }, [result, params.capacity]);
 
   // Counts fin de FY (mois 11, 23, 35, ...) — par série
   const endCountsByKind = useMemo(() => {
@@ -235,9 +281,27 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
         </div>
       </section>
 
-      <CohortModelSection params={params} setParams={setParams} />
+      {/* Mode expert toggle — masque sections Niveau 6 par défaut pour utilisateur débutant.
+          Réduit drastiquement le bruit visuel sur /parameters quand on veut juste ajuster
+          le ramp et les growth rates. */}
+      <div className="flex items-center justify-end gap-2 border-y py-2">
+        <Label htmlFor="expert-toggle" className="text-xs text-muted-foreground">
+          Mode expert (cohort, courbe rétention, canaux, saisonnalité acq/churn, mix évolutif)
+        </Label>
+        <Switch id="expert-toggle" checked={expertMode} onCheckedChange={toggleExpert} />
+      </div>
 
-      <AdvancedSubsSection params={params} setParams={setParams} />
+      {expertMode ? (
+        <>
+          <CohortModelSection params={params} setParams={setParams} />
+          <AdvancedSubsSection params={params} setParams={setParams} />
+        </>
+      ) : (
+        <div className="text-xs text-muted-foreground italic border border-dashed rounded p-3 text-center">
+          Mode expert désactivé — les sections Cohort + Niveau 6 sont masquées. Active le toggle
+          ci-dessus pour modéliser acquisitions brutes, courbe rétention, canaux, etc.
+        </div>
+      )}
 
       <section>
         <div className="flex items-center justify-between mb-3">
@@ -326,14 +390,49 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
             <p className="text-[10px] text-muted-foreground mt-1">
               0% = pas de churn (rétention parfaite). 2-3% mensuel = standard fitness.
             </p>
+            <div className="flex flex-wrap gap-1 mt-1.5">
+              <a
+                href="/sensitivity"
+                title="Voir l'impact d'une variation ±20% sur churn"
+                className="inline-flex items-center h-6 px-2 text-[10px] rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground"
+              >
+                → Tester ±20%
+              </a>
+              <a
+                href="/sensitivity#tornado"
+                title="Voir la décomposition des leviers (tornado)"
+                className="inline-flex items-center h-6 px-2 text-[10px] rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground"
+              >
+                → Voir tornado
+              </a>
+              <a
+                href="/capacity-planner"
+                title="Voir l'impact capacité"
+                className="inline-flex items-center h-6 px-2 text-[10px] rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground"
+              >
+                → Impact capacité
+              </a>
+            </div>
           </div>
           <div className="text-xs text-muted-foreground p-3 border rounded bg-muted/20">
             Rétention équivalente:{" "}
             <span className="font-semibold text-foreground">
-              {subs.monthlyChurnPct && subs.monthlyChurnPct > 0
-                ? `~${(1 / subs.monthlyChurnPct).toFixed(0)} mois moyens`
-                : "infini (pas de churn)"}
+              {(() => {
+                const curve = subs.cohortModel?.retentionCurve;
+                const churn = subs.monthlyChurnPct ?? 0;
+                if (curve && curve.length > 0) {
+                  const months = expectedRetentionMonths(churn, curve);
+                  return `~${months.toFixed(0)} mois (intégrale courbe)`;
+                }
+                if (churn > 0) return `~${(1 / churn).toFixed(0)} mois (1/churn)`;
+                return "infini (pas de churn)";
+              })()}
             </span>
+            {subs.cohortModel?.retentionCurve ? (
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Calcul depuis la courbe empirique (Σ rétention[t]) — pas <code>1/churn</code>.
+              </p>
+            ) : null}
           </div>
         </div>
       </section>
@@ -449,7 +548,103 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
             ))}
           </div>
         </div>
+
+        {/* Niveau 6 — multipanel preview : revenue / saturation / cumul EBITDA
+            Permet de voir en un coup d'œil l'impact de toute modification cohort/churn
+            /mix sur les 3 métriques clés en plus du count. */}
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+          <MiniPanel
+            title="Revenu / mois (HT)"
+            values={derivedSeries.revenue}
+            color="#0EA5E9"
+            fyLabels={tl.fyLabels}
+            fmt={(v) => `${(v / 1000).toFixed(0)}k€`}
+          />
+          <MiniPanel
+            title="Saturation capacité"
+            values={derivedSeries.saturation}
+            color={params.capacity ? "#F59E0B" : "#cbd5e1"}
+            fyLabels={tl.fyLabels}
+            fmt={(v) => `${(v * 100).toFixed(0)}%`}
+            referenceLine={1}
+            disabled={!params.capacity}
+            disabledHint="Définis params.capacity pour activer"
+          />
+          <MiniPanel
+            title="EBITDA cumulé (break-even)"
+            values={derivedSeries.cumEbitda}
+            color="#10B981"
+            fyLabels={tl.fyLabels}
+            fmt={(v) => `${(v / 1000).toFixed(0)}k€`}
+            referenceLine={0}
+          />
+        </div>
       </section>
+    </div>
+  );
+}
+
+/**
+ * Mini sparkline panel — affichage compact d'une série mensuelle avec marqueurs FY,
+ * ligne de référence optionnelle (ex: 100% saturation, 0€ break-even), label valeur fin.
+ * Volontairement décoré minimal : 3 panels côte-à-côte sous le graph count principal.
+ */
+function MiniPanel({
+  title,
+  values,
+  color,
+  fyLabels,
+  fmt,
+  referenceLine,
+  disabled,
+  disabledHint,
+}: {
+  title: string;
+  values: number[];
+  color: string;
+  fyLabels: string[];
+  fmt: (v: number) => string;
+  referenceLine?: number;
+  disabled?: boolean;
+  disabledHint?: string;
+}) {
+  const W = 100;
+  const H = 30;
+  const vMin = Math.min(...values, referenceLine ?? Infinity, 0);
+  const vMax = Math.max(...values, referenceLine ?? -Infinity, 1);
+  const range = Math.max(1e-9, vMax - vMin);
+  const xAt = (i: number) => (i * W) / Math.max(1, values.length - 1);
+  const yAt = (v: number) => H - ((v - vMin) / range) * H;
+  const points = values.map((v, i) => `${xAt(i)},${yAt(v)}`).join(" ");
+  const refY = referenceLine !== undefined ? yAt(referenceLine) : null;
+  const last = values[values.length - 1] ?? 0;
+  return (
+    <div
+      className={"border rounded-md p-2 bg-background " + (disabled ? "opacity-50" : "")}
+      title={disabled ? disabledHint : undefined}
+    >
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{title}</div>
+        <div className="text-[11px] font-mono font-semibold text-foreground">{fmt(last)}</div>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-10">
+        {refY !== null ? (
+          <line x1={0} y1={refY} x2={W} y2={refY} stroke="#9ca3af" strokeWidth="0.3" strokeDasharray="1 1" />
+        ) : null}
+        {Array.from({ length: fyLabels.length - 1 }, (_, i) => i + 1).map((fy) => (
+          <line
+            key={fy}
+            x1={(fy * 12 * W) / Math.max(1, values.length - 1)}
+            x2={(fy * 12 * W) / Math.max(1, values.length - 1)}
+            y1={0}
+            y2={H}
+            stroke="#e5e5e5"
+            strokeWidth="0.2"
+            strokeDasharray="0.5 0.5"
+          />
+        ))}
+        <polyline fill="none" stroke={color} strokeWidth="0.8" points={points} />
+      </svg>
     </div>
   );
 }
@@ -829,7 +1024,15 @@ function AdvancedSubsSection({
         ) : null}
 
         <div className="flex items-center justify-between">
-          <Label className="text-xs">Saisonnalité churn (informatif — non appliqué V1)</Label>
+          <div className="flex-1">
+            <Label className="text-xs">Saisonnalité churn (multiplicateurs Sept→Août)</Label>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              Module le churn mensuel selon le mois calendaire. Ex: 1.5 en juillet = churn ×1.5
+              pendant l'été (pratique courante CrossFit : départs été + reprise rentrée). Appliqué
+              en mode cohort uniquement. <strong>Ignoré si une courbe de rétention est active</strong>
+              {" "}(la courbe empirique override la modulation synthétique).
+            </p>
+          </div>
           <Switch checked={seasChurnEnabled} onCheckedChange={toggleSeasChurn} />
         </div>
         {seasChurnEnabled ? (

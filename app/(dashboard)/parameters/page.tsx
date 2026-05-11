@@ -13,6 +13,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
+import { CalibrationWizard } from "@/components/calibration-wizard";
 import { ValidatedCell } from "@/components/validated-cell";
 import { SubsEvolutionEditor } from "@/components/subs-evolution-editor";
 import { CapexItemsEditor } from "@/components/capex-items-editor";
@@ -21,6 +22,7 @@ import { StartMonthPicker } from "@/components/start-month-picker";
 import { Trash2, Plus } from "lucide-react";
 import { fmtPct, fmtCurrency } from "@/lib/format";
 import { expandCapex, type ModelParams, type LegacyCohort } from "@/lib/model/types";
+import { expectedRetentionMonths } from "@/lib/model/compute";
 
 export default function ParametersPage() {
   const params = useModelStore((s) => s.params);
@@ -38,7 +40,10 @@ export default function ParametersPage() {
             Tous les inputs du modèle. Modifications en temps réel + auto-save (si fork chargé).
           </p>
         </div>
-        <ScenarioSwitcher />
+        <div className="flex items-center gap-2">
+          <CalibrationWizard />
+          <ScenarioSwitcher />
+        </div>
       </header>
 
       <Card className="bg-blue-50/40 border-blue-300">
@@ -175,7 +180,15 @@ export default function ParametersPage() {
                   const fallbackChurn = params.subs.monthlyChurnPct ?? 0;
                   const tierChurn = tier.monthlyChurnPct ?? fallbackChurn;
                   const tierChurnDefined = tier.monthlyChurnPct !== undefined;
-                  const retentionMonths = tierChurn > 0 ? 1 / tierChurn : null;
+                  // Si retentionCurve actif, l'espérance est l'intégrale de la courbe.
+                  // Sinon, 1/churn (formule fermée loi géométrique).
+                  const curve = params.subs.cohortModel?.retentionCurve;
+                  const retentionMonths =
+                    curve && curve.length > 0
+                      ? expectedRetentionMonths(tierChurn, curve)
+                      : tierChurn > 0
+                      ? 1 / tierChurn
+                      : null;
                   return (
                     <div key={tier.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end p-3 border rounded-md bg-muted/30">
                       <div className="md:col-span-3">
@@ -318,6 +331,91 @@ export default function ParametersPage() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
+                      </div>
+
+                      {/* Niveau 6 — Mix évolutif par FY (override mixPct statique).
+                          Permet de modéliser un mix qui glisse vers le premium au fil
+                          des FY (ex : 30% → 45% sur 5 ans). Désactivé = mix constant. */}
+                      <div className="md:col-span-12 mt-1 border-t pt-2">
+                        <details>
+                          <summary className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground select-none">
+                            Mix évolutif par FY {tier.mixPctByFy ? "(actif)" : "(constant — clique pour activer)"}
+                          </summary>
+                          <div className="mt-2 space-y-1.5">
+                            <p className="text-[10px] text-muted-foreground">
+                              Si défini, override le mix statique. Le moteur interpole linéairement entre les
+                              valeurs FY pour produire un mix mensuel. Veille à ce que la somme des mix par FY
+                              reste cohérente (la validation est faite au niveau du tableau ci-dessus).
+                            </p>
+                            <div className="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-7 gap-1">
+                              {Array.from({ length: params.timeline.horizonYears }, (_, fyIdx) => {
+                                const fyLabel = `FY${(params.timeline.startYear + fyIdx) % 100}`;
+                                const arr = tier.mixPctByFy ?? [];
+                                const value = arr[fyIdx] ?? tier.mixPct;
+                                return (
+                                  <div key={fyIdx}>
+                                    <Label className="text-[9px] text-muted-foreground">{fyLabel}</Label>
+                                    <div className="relative">
+                                      <Input
+                                        type="number"
+                                        step="1"
+                                        value={(value * 100).toFixed(1).replace(/\.0$/, "")}
+                                        onChange={(e) => {
+                                          const v = (parseFloat(e.target.value) || 0) / 100;
+                                          setParams((p) => ({
+                                            ...p,
+                                            subs: {
+                                              ...p.subs,
+                                              tiers: p.subs.tiers.map((t, i) => {
+                                                if (i !== idx) return t;
+                                                const base =
+                                                  t.mixPctByFy ??
+                                                  new Array(p.timeline.horizonYears).fill(t.mixPct);
+                                                const next = [...base];
+                                                while (next.length < p.timeline.horizonYears) next.push(t.mixPct);
+                                                next[fyIdx] = v;
+                                                return { ...t, mixPctByFy: next };
+                                              }),
+                                            },
+                                          }));
+                                        }}
+                                        className="h-7 px-1 text-[10px] pr-5"
+                                      />
+                                      <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground">
+                                        %
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              {tier.mixPctByFy ? (
+                                <div className="flex items-end">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-[9px]"
+                                    onClick={() =>
+                                      setParams((p) => ({
+                                        ...p,
+                                        subs: {
+                                          ...p.subs,
+                                          tiers: p.subs.tiers.map((t, i) => {
+                                            if (i !== idx) return t;
+                                            const { mixPctByFy: _drop, ...rest } = t;
+                                            return rest;
+                                          }),
+                                        },
+                                      }))
+                                    }
+                                    title="Retirer override, retomber sur mixPct statique"
+                                  >
+                                    × Reset
+                                  </Button>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </details>
                       </div>
                     </div>
                   );
