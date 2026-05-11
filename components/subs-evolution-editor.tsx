@@ -22,13 +22,15 @@ type Props = {
 
 export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
   const { subs, timeline } = params;
-  // Mode expert : si false (default), masque les sections Niveau 6 avancées (cohort,
-  // bilan funnel, courbe rétention, mix évolutif, canaux, saisonnalité acquisition/churn).
-  // Préserve la lisibilité pour utilisateur débutant qui veut juste le ramp + growth.
-  // Localstorage pour persister la préférence entre sessions.
+  // Mode expert ON par défaut — les sections Niveau 6 (cohort, courbe rétention, canaux,
+  // saisonnalité acq/churn) sont les outils principaux de modélisation. Le toggle reste
+  // disponible pour passer en mode "simple" si besoin (utilisateur novice). LocalStorage
+  // persiste la préférence : null = default true, "false" = explicitement désactivé.
   const [expertMode, setExpertMode] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem("bpcfrg-expert-mode") === "true";
+    if (typeof window === "undefined") return true;
+    const stored = window.localStorage.getItem("bpcfrg-expert-mode");
+    if (stored === null) return true;
+    return stored === "true";
   });
   const toggleExpert = (v: boolean) => {
     setExpertMode(v);
