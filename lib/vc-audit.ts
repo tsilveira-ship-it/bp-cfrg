@@ -1,5 +1,5 @@
 import type { ModelParams, ModelResult } from "./model/types";
-import { DEFAULT_CHARGES } from "./model/types";
+import { DEFAULT_CHARGES, getPatroPct } from "./model/types";
 import { SECTOR_BENCHMARKS } from "./comparables";
 import { CASH_THRESHOLDS, FINANCING_RATE_THRESHOLDS } from "./thresholds";
 
@@ -206,27 +206,36 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
     });
   }
 
-  if (p.salaries.chargesPatroPct === 0) {
+  // Détection « charges URSSAF effectivement nulles » : on calcule le patro effectif
+  // appliqué par le moteur (compute.ts) sur chaque poste. Si la somme est 0, le finding
+  // se déclenche — quelle que soit la valeur de chargesPatroPct ou la présence/absence
+  // de chargesProfiles. Évite à la fois faux négatifs (chargesPatroPct=0 mais profiles
+  // peuplés) et faux positifs (chargesPatroPct=0 mais items catégorisés).
+  const monthlyGrossAll = p.salaries.items.reduce(
+    (s, it) => s + (it.fy26Bump ?? it.monthlyGross) * it.fte,
+    0
+  );
+  const annualEmployerPatro = p.salaries.items.reduce((s, it) => {
+    const patro = getPatroPct(it, p.salaries.chargesProfiles, p.salaries.chargesPatroPct);
+    return s + (it.fy26Bump ?? it.monthlyGross) * it.fte * patro * 12;
+  }, 0);
+  if (annualEmployerPatro <= 0 && monthlyGrossAll > 0) {
     const profileByCat = (cat: string) =>
       (p.salaries.chargesProfiles ?? DEFAULT_CHARGES).find((pr) => pr.category === cat);
     const cadrePatro = profileByCat("cadre")?.patroPct ?? 0.42;
     const nonCadrePatro = profileByCat("non-cadre")?.patroPct ?? 0.40;
+    const tnsPatro = profileByCat("tns")?.patroPct ?? 0.22;
     const apprentiPatro = profileByCat("apprenti")?.patroPct ?? 0.10;
-    // Estimation impact: somme des bruts mensuels × FTE × patro cadre × 12 mois
-    const monthlyGrossAll = p.salaries.items.reduce(
-      (s, it) => s + (it.fy26Bump ?? it.monthlyGross) * it.fte,
-      0
-    );
     const annualMissingPatro = monthlyGrossAll * cadrePatro * 12;
     out.push({
       id: "charges-patro-zero",
       dimension: "Coûts & opérations",
       severity: "kill",
-      claim: "Charges patronales = 0% — modèle URSSAF désactivé.",
+      claim: "Charges patronales effectives = 0% — modèle URSSAF désactivé.",
       challenge:
         `Standard cadre FR ≈ ${fmtPct0(cadrePatro)}, non-cadre ≈ ${fmtPct0(nonCadrePatro)}. Sur ~${Math.round(monthlyGrossAll).toLocaleString("fr-FR")}€/mois bruts × ${fmtPct0(cadrePatro)} = +${Math.round(annualMissingPatro / 1000)}k€/an de charges manquantes. Le P&L est biaisé d'autant.`,
-      evidence: `chargesPatroPct=${p.salaries.chargesPatroPct}.`,
-      fix: `Activer ${fmtPct0(cadrePatro)} cadre, ${fmtPct0(nonCadrePatro)} non-cadre, ~22% TNS pour associés-gérants, ${fmtPct0(apprentiPatro)} apprenti.`,
+      evidence: `chargesPatroPct=${p.salaries.chargesPatroPct}, aucun poste salarié ne porte de category exploitable.`,
+      fix: `Affecter une category à chaque poste (cadre ${fmtPct0(cadrePatro)}, non-cadre ${fmtPct0(nonCadrePatro)}, tns ${fmtPct0(tnsPatro)} pour associés-gérants majoritaires, apprenti ${fmtPct0(apprentiPatro)}) ou fixer chargesPatroPct global.`,
     });
   }
 

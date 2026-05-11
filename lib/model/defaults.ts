@@ -42,9 +42,12 @@ export const DEFAULT_PARAMS: ModelParams = {
 
   salaries: {
     items: [
-      { id: "salesmgr", role: "Sales manager", monthlyGross: 3300, fte: 1, startMonth: 0, fy26Bump: 3818 },
-      { id: "headcoach", role: "Headcoach", monthlyGross: 3300, fte: 2, startMonth: 0, fy26Bump: 4240 },
-      { id: "associes", role: "Associés gérants", monthlyGross: 3300, fte: 2, startMonth: 0 },
+      // Catégories assignées pour que les charges patronales URSSAF soient appliquées
+      // (sinon `chargesPatroPct = 0` global donnerait des charges nulles, P&L biaisé).
+      { id: "salesmgr", role: "Sales manager", monthlyGross: 3300, fte: 1, startMonth: 0, fy26Bump: 3818, category: "non-cadre" },
+      { id: "headcoach", role: "Headcoach", monthlyGross: 3300, fte: 2, startMonth: 0, fy26Bump: 4240, category: "non-cadre" },
+      // Associés gérants majoritaires SARL = TNS (URSSAF dirigeants), pas un salarié cadre.
+      { id: "associes", role: "Associés gérants", monthlyGross: 3300, fte: 2, startMonth: 0, category: "tns" },
     ],
     freelancePools: [
       { id: "floor_cfrg", name: "Floor CFRG", hourlyRate: 25, monthlyHours: 206.4, hoursPerWeekday: 8, hoursPerWeekendDay: 4 },
