@@ -642,6 +642,148 @@ export type ModelParams = {
   };
 
   openingCash: number;
+
+  /**
+   * Seuils utilisés par les modules d'audit/health-check/verdict VC + métriques investisseur
+   * (multiples, retention fallback). Tous champs optionnels — fallback à constantes raisonnables.
+   * Sortir ces valeurs ici évite les magic numbers dispersés dans lib/vc-audit.ts, health-check.ts,
+   * synthesis.ts, metrics.ts, vc-devil-client.tsx, financial-highlights/page.tsx.
+   */
+  auditThresholds?: {
+    // Unit economics
+    ltvCacMin?: number;                 // default 3
+    churnKillLevel?: number;            // default 0 (churn === 0 → KILL)
+    churnMajorThreshold?: number;       // default 0.015
+    growthMagicYoy?: number;            // default 0.30
+    growthMagicChurn?: number;          // default 0.02
+
+    // Financement
+    debtRatioMax?: number;              // default 0.5 (debt / total raised)
+    founderMinPct?: number;             // default 0.6
+    bondDeferralMinYears?: number;      // default 2
+
+    // Compta/fiscal
+    isThresholdNetIncome?: number;      // default 50_000 (déclenche kill si IS off)
+    daThresholdCapex?: number;          // default 50_000 (déclenche major si D&A off)
+    rentJumpRatio?: number;             // default 1.3
+
+    // Trésorerie/risque
+    cashBufferThinEur?: number;         // default 50_000
+    cashThinSynthesisEur?: number;      // default 50_000 (synthesis label)
+    cashThinHealthEur?: number;         // default 10_000 (health-check label)
+
+    // Salaires / KPIs marges
+    salaryPctHighThreshold?: number;    // default 0.50 (% CA)
+    salaryPctMediumThreshold?: number;  // default 0.35
+    ebitdaMarginAlertNeg?: number;      // default -0.10
+
+    // Couleurs investor page
+    irrGoodThreshold?: number;          // default 0.15
+    dscrGoodThreshold?: number;         // default 1.2
+    dscrLimitThreshold?: number;        // default 1.0
+    ltvCacGoodThreshold?: number;       // default 3
+    ltvCacWarnThreshold?: number;      // default 1
+
+    // BFR
+    bfrWarnDays?: number;               // default 90
+    bfrCriticalDays?: number;           // default 180
+
+    // Capacité
+    capacityAlertSaturation?: number;   // default 0.95
+    capacityCriticalSaturation?: number; // default 1.0
+
+    // Taux emprunts plausibles
+    loanRateMaxPlausiblePct?: number;   // default 30
+
+    // Verdict VC counts
+    verdictKillMinCount?: number;       // default 1
+    verdictMajorBlockingCount?: number; // default 4
+    verdictMajorWarnCount?: number;     // default 1
+  };
+
+  /**
+   * Hypothèses standard côté investisseur — partagées entre /investor et /financial-highlights
+   * pour éviter divergence affichée à un investisseur (bug historique: exit multiple hardcoded
+   * 5x sur /financial-highlights ignorait le slider /investor).
+   */
+  investorAssumptions?: {
+    exitMultipleEbitda?: number;        // default 5x
+    discountRate?: number;              // default 0.10
+    retentionMonthsFallback?: number;   // default 24 (quand churn=0)
+  };
+
+  /**
+   * Benchmarks sectoriels — override SECTOR_BENCHMARKS de lib/comparables.ts.
+   * Permet d'éditer prix/CAC/churn/etc. sectoriels sans recompile.
+   */
+  sectorBenchmarks?: Partial<{
+    monthlyPriceCrossfit: { low: number; high: number; source: string };
+    monthlyPriceClassicGym: { low: number; high: number; source: string };
+    cacFitness: { low: number; high: number; source: string };
+    churnFitnessChain: { low: number; high: number; source: string };
+    churnCrossfitCommunity: { low: number; high: number; source: string };
+    ebitdaMarginCrossfit: { low: number; high: number; source: string };
+    ebitdaMarginGym: { low: number; high: number; source: string };
+    ltvCrossfitMonths: { low: number; high: number; source: string };
+    classCapacityCrossfit: { low: number; high: number; source: string };
+    membersMatureCrossfit: { low: number; high: number; source: string };
+    rentPerSqmParisYear: { low: number; high: number; source: string };
+    isRateFR: { low: number; high: number; source: string };
+    multipleEbitdaFitness: { low: number; high: number; source: string };
+  }>;
+
+  /**
+   * Scénarios de stress paramétrables (sortis du composant /sensitivity).
+   * Si défini, override les scénarios par défaut affichés.
+   */
+  stressScenarios?: {
+    id: string;
+    label: string;
+    tone?: "info" | "warning" | "error" | "success";
+    sliders: {
+      caMultiplier?: number;
+      salaryMultiplier?: number;
+      rentMultiplier?: number;
+      marketingMultiplier?: number;
+      churnMultiplier?: number;
+      priceIndexMultiplier?: number;
+      capacityMultiplier?: number;
+      isMultiplier?: number;
+      openingDelayMonths?: number;
+      loanRateMultiplier?: number;
+    };
+  }[];
+
+  /**
+   * Override des défauts Monte Carlo (rangePct par driver + paramètres globaux).
+   * Le composant /monte-carlo lit ces valeurs au montage initial.
+   */
+  mcDefaults?: {
+    driverOverrides?: Record<
+      string,
+      { rangePct?: number; enabled?: boolean; correlationWeight?: number }
+    >;
+    maxOpeningDelayMonths?: number;
+    distribution?: "uniform" | "normal" | "triangular";
+    enableCorrelation?: boolean;
+  };
+
+  /**
+   * Heuristiques de capacité utilisées par health-check + capacity-planner
+   * quand le planner détaillé n'est pas configuré.
+   */
+  capacityHeuristics?: {
+    coachHoursPerFteMonth?: number;     // default 130 (health-check fallback)
+    memberHoursDemandPerMonth?: number; // default 12 (heuristique fallback)
+    cohortShareNew?: number;            // default 0.25
+    cohortShareMid?: number;            // default 0.35
+    cohortShareLong?: number;           // default 0.40
+    productiveRatio?: number;           // default 0.90
+    expectedFillRate?: number;          // default 0.70
+    targetSaturationDefault?: number;   // default 0.75
+    overflowSaturation?: number;        // default 1.5
+    peakRatioThreshold?: number;        // default 0.40
+  };
 };
 
 export type MonthlyComputed = {

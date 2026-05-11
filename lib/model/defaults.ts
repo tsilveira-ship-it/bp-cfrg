@@ -154,7 +154,151 @@ export const DEFAULT_PARAMS: ModelParams = {
 
   bfr: { daysOfRevenue: 0 },
   openingCash: 0,
+
+  auditThresholds: {
+    ltvCacMin: 3,
+    churnKillLevel: 0,
+    churnMajorThreshold: 0.015,
+    growthMagicYoy: 0.30,
+    growthMagicChurn: 0.02,
+    debtRatioMax: 0.5,
+    founderMinPct: 0.6,
+    bondDeferralMinYears: 2,
+    isThresholdNetIncome: 50_000,
+    daThresholdCapex: 50_000,
+    rentJumpRatio: 1.3,
+    cashBufferThinEur: 50_000,
+    cashThinSynthesisEur: 50_000,
+    cashThinHealthEur: 10_000,
+    salaryPctHighThreshold: 0.50,
+    salaryPctMediumThreshold: 0.35,
+    ebitdaMarginAlertNeg: -0.10,
+    irrGoodThreshold: 0.15,
+    dscrGoodThreshold: 1.2,
+    dscrLimitThreshold: 1.0,
+    ltvCacGoodThreshold: 3,
+    ltvCacWarnThreshold: 1,
+    bfrWarnDays: 90,
+    bfrCriticalDays: 180,
+    capacityAlertSaturation: 0.95,
+    capacityCriticalSaturation: 1.0,
+    loanRateMaxPlausiblePct: 30,
+    verdictKillMinCount: 1,
+    verdictMajorBlockingCount: 4,
+    verdictMajorWarnCount: 1,
+  },
+
+  investorAssumptions: {
+    exitMultipleEbitda: 5,
+    discountRate: 0.10,
+    retentionMonthsFallback: 24,
+  },
+
+  sectorBenchmarks: {
+    monthlyPriceCrossfit: { low: 130, high: 220, source: "Reebok Crossfit Louvre, Train Yard, CrossFit RG (sites publics 2024)" },
+    monthlyPriceClassicGym: { low: 30, high: 60, source: "Basic Fit, Neoness, On Air (catalogues 2024)" },
+    cacFitness: { low: 80, high: 150, source: "Étude IHRSA 2023, secteur fitness FR" },
+    churnFitnessChain: { low: 0.03, high: 0.05, source: "IHRSA EU 2023" },
+    churnCrossfitCommunity: { low: 0.015, high: 0.03, source: "CrossFit affiliate survey" },
+    ebitdaMarginCrossfit: { low: 0.15, high: 0.25, source: "Étude Xerfi fitness FR 2023" },
+    ebitdaMarginGym: { low: 0.20, high: 0.30, source: "Annual reports Basic Fit, Planet Fitness" },
+    ltvCrossfitMonths: { low: 24, high: 36, source: "Cohort retention CrossFit affiliates" },
+    classCapacityCrossfit: { low: 12, high: 16, source: "CrossFit HQ programming guidelines" },
+    membersMatureCrossfit: { low: 250, high: 450, source: "CrossFit affiliate census 2023" },
+    rentPerSqmParisYear: { low: 350, high: 700, source: "BNP Paribas Real Estate, indices 2024" },
+    isRateFR: { low: 0.15, high: 0.25, source: "Code général des impôts FR" },
+    multipleEbitdaFitness: { low: 4, high: 6, source: "M&A studies: Pitchbook fitness 2023" },
+  },
+
+  stressScenarios: [
+    {
+      id: "pessimist",
+      label: "Pessimiste : -20% CA, +10% salaires, +5% loyer, churn +30%",
+      tone: "warning",
+      sliders: { caMultiplier: 0.8, salaryMultiplier: 1.1, rentMultiplier: 1.05, churnMultiplier: 1.3 },
+    },
+    {
+      id: "optimist",
+      label: "Optimiste : +20% CA, +10% marketing, churn -15%",
+      tone: "success",
+      sliders: { caMultiplier: 1.2, marketingMultiplier: 1.1, churnMultiplier: 0.85 },
+    },
+    {
+      id: "recession",
+      label: "Récession : -25% CA, churn +50%, taux +40%, prix gelés, marketing -30%",
+      tone: "warning",
+      sliders: {
+        caMultiplier: 0.75,
+        salaryMultiplier: 1.05,
+        priceIndexMultiplier: 0,
+        churnMultiplier: 1.5,
+        loanRateMultiplier: 1.4,
+        marketingMultiplier: 0.7,
+      },
+    },
+    {
+      id: "forceMajeure",
+      label: "Force majeure : -50% CA temporaire, churn ×1.8 (lockdown / sinistre)",
+      tone: "error",
+      sliders: { caMultiplier: 0.5, churnMultiplier: 1.8, marketingMultiplier: 0.5 },
+    },
+    {
+      id: "refinancing",
+      label: "Refinancement difficile : taux ×1.7, retard 3 mois, -5% CA",
+      tone: "warning",
+      sliders: { loanRateMultiplier: 1.7, openingDelayMonths: 3, caMultiplier: 0.95 },
+    },
+  ],
+
+  mcDefaults: {
+    maxOpeningDelayMonths: 6,
+    distribution: "uniform",
+    enableCorrelation: true,
+    // driverOverrides: undefined → laisse les rangePct par défaut de DEFAULT_DRIVERS dans monte-carlo.ts.
+  },
+
+  capacityHeuristics: {
+    coachHoursPerFteMonth: 130,
+    memberHoursDemandPerMonth: 12,
+    cohortShareNew: 0.25,
+    cohortShareMid: 0.35,
+    cohortShareLong: 0.40,
+    productiveRatio: 0.90,
+    expectedFillRate: 0.70,
+    targetSaturationDefault: 0.75,
+    overflowSaturation: 1.5,
+    peakRatioThreshold: 0.40,
+  },
 };
+
+/**
+ * Helpers d'accès — appliquent fallback sur defaults si user override partiel.
+ * À utiliser depuis chaque consommateur au lieu de référencer directement les littéraux.
+ */
+export function getAuditThresholds(p: ModelParams) {
+  return { ...DEFAULT_PARAMS.auditThresholds!, ...(p.auditThresholds ?? {}) };
+}
+export function getInvestorAssumptions(p: ModelParams) {
+  return { ...DEFAULT_PARAMS.investorAssumptions!, ...(p.investorAssumptions ?? {}) };
+}
+export function getCapacityHeuristics(p: ModelParams) {
+  return { ...DEFAULT_PARAMS.capacityHeuristics!, ...(p.capacityHeuristics ?? {}) };
+}
+export function getSectorBenchmarks(p: ModelParams) {
+  // Le spread depuis DEFAULT_PARAMS.sectorBenchmarks garantit que toutes les clés sont présentes.
+  // Cast en non-Partial pour les consommateurs (vc-audit, comparables) qui accèdent .low/.high.
+  return { ...DEFAULT_PARAMS.sectorBenchmarks!, ...(p.sectorBenchmarks ?? {}) } as Required<
+    NonNullable<ModelParams["sectorBenchmarks"]>
+  >;
+}
+export function getStressScenarios(p: ModelParams) {
+  return p.stressScenarios && p.stressScenarios.length > 0
+    ? p.stressScenarios
+    : DEFAULT_PARAMS.stressScenarios!;
+}
+export function getMcDefaults(p: ModelParams) {
+  return { ...DEFAULT_PARAMS.mcDefaults!, ...(p.mcDefaults ?? {}) };
+}
 
 export const AUDIT_CORRECTED_PARAMS: ModelParams = {
   ...DEFAULT_PARAMS,

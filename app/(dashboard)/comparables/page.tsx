@@ -19,7 +19,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { evaluate, SECTOR_BENCHMARKS, type Comparable } from "@/lib/comparables";
+import { evaluate, type Comparable } from "@/lib/comparables";
+import { getSectorBenchmarks } from "@/lib/model/defaults";
 import { fmtCurrency, fmtPct, fmtNum } from "@/lib/format";
 
 function fmtVal(v: number, unit: Comparable["unit"]): string {
@@ -35,6 +36,8 @@ export default function ComparablesPage() {
   const result = useMemo(() => computeModel(params), [params]);
 
   const rows = useMemo<Comparable[]>(() => {
+    // Benchmarks lus depuis params (override possible) avec fallback DEFAULT_PARAMS.
+    const SECTOR_BENCHMARKS = getSectorBenchmarks(params);
     // Prix moyen abo
     const tiers = params.subs.tiers ?? [];
     const avgPrice = tiers.reduce((s, t) => s + t.monthlyPrice * t.mixPct, 0);

@@ -35,6 +35,7 @@ import {
   type MCDistribution,
   type MCDriver,
 } from "@/lib/monte-carlo";
+import { getMcDefaults } from "@/lib/model/defaults";
 import { fmtCurrency, fmtPct } from "@/lib/format";
 
 // Groupes pour affichage UI structuré
@@ -51,12 +52,25 @@ const DRIVER_GROUPS: { title: string; ids: string[] }[] = [
 
 export default function MonteCarloPage() {
   const params = useModelStore((s) => s.params);
-  const [drivers, setDrivers] = useState<MCDriver[]>(DEFAULT_DRIVERS);
+
+  // Defaults Monte Carlo applicables au scénario actif :
+  // - `params.mcDefaults.driverOverrides[id]` peut surcharger rangePct / enabled / correlationWeight
+  // - distribution / corrélation / max opening delay overridables aussi
+  // Permet de calibrer les amplitudes de choc sans recompile (sortir 0.20 / 0.50 / 1.0 hardcoded).
+  const mcDef = getMcDefaults(params);
+  const initialDrivers: MCDriver[] = DEFAULT_DRIVERS.map((d) => {
+    const ov = mcDef.driverOverrides?.[d.id];
+    return ov ? { ...d, ...ov } : d;
+  });
+
+  const [drivers, setDrivers] = useState<MCDriver[]>(initialDrivers);
   const [n, setN] = useState(1000);
   const [seed, setSeed] = useState(42);
-  const [distribution, setDistribution] = useState<MCDistribution>("uniform");
-  const [enableCorrelation, setEnableCorrelation] = useState(true);
-  const [maxOpeningDelay, setMaxOpeningDelay] = useState(6);
+  const [distribution, setDistribution] = useState<MCDistribution>(
+    mcDef.distribution ?? "uniform"
+  );
+  const [enableCorrelation, setEnableCorrelation] = useState(mcDef.enableCorrelation ?? true);
+  const [maxOpeningDelay, setMaxOpeningDelay] = useState(mcDef.maxOpeningDelayMonths ?? 6);
   const [result, setResult] = useState<MCAggregate | null>(null);
   const [pending, startTransition] = useTransition();
   const [duration, setDuration] = useState<number | null>(null);

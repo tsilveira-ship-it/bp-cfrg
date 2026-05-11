@@ -1,10 +1,5 @@
 import type { ModelParams, ModelResult } from "./model/types";
-import { DEFAULT_CHARGES, getPatroPct } from "./model/types";
-import { SECTOR_BENCHMARKS } from "./comparables";
-import { CASH_THRESHOLDS, FINANCING_RATE_THRESHOLDS } from "./thresholds";
-
-const fmtPct = (v: number, digits = 1) => `${(v * 100).toFixed(digits)}%`;
-const fmtPct0 = (v: number) => fmtPct(v, 0);
+import { getSectorBenchmarks, getAuditThresholds } from "./model/defaults";
 
 export type VCSeverity = "kill" | "major" | "yellow" | "watch";
 export type VCDimension =
@@ -42,6 +37,8 @@ export function severityLabel(s: VCSeverity): string {
 
 export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
   const out: VCFinding[] = [];
+  const T = getAuditThresholds(p);
+  const SECTOR_BENCHMARKS = getSectorBenchmarks(p);
 
   const tiers = p.subs.tiers ?? [];
   const avgPrice = tiers.reduce((s, t) => s + t.monthlyPrice * t.mixPct, 0);
@@ -69,7 +66,7 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
     id: "tam-sam-som",
     dimension: "Marché & demande",
     severity: "major",
-    claim: `Le BP raisonne sur un ramp ${p.subs.rampStartCount}→${p.subs.rampEndCount} membres sans définir le marché adressable.`,
+    claim: "Le BP raisonne sur un ramp 80→200 membres sans définir le marché adressable.",
     challenge:
       "Quel est le TAM (fitness Paris ~1.5M pratiquants ?), le SAM (CrossFit/Hyrox 6e arr ~?), le SOM (zone primaire 800m) ? Combien de boxes dans un rayon de 2km ? Pourquoi un nouvel entrant gagne ?",
     evidence:
@@ -90,7 +87,7 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
   });
 
   // === UNIT ECONOMICS ===
-  if (churn === 0) {
+  if (churn === T.churnKillLevel!) {
     out.push({
       id: "churn-zero",
       dimension: "Unit economics",
@@ -100,9 +97,9 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
         "C'est mathématiquement faux. Un VC ferme le deck sur ce chiffre. Mêmes les boxes les plus communautaires perdent 1.5-3%/mo (déménagements, blessures, vie pro, perte de motivation).",
       evidence:
         `monthlyChurnPct=${churn} dans les params actifs. Benchmark CrossFit communautaire: ${(SECTOR_BENCHMARKS.churnCrossfitCommunity.low * 100).toFixed(1)}–${(SECTOR_BENCHMARKS.churnCrossfitCommunity.high * 100).toFixed(1)}%/mois.`,
-      fix: `Activer un churn réaliste ${fmtPct(SECTOR_BENCHMARKS.churnCrossfitCommunity.low, 1)}–${fmtPct(SECTOR_BENCHMARKS.churnCrossfitCommunity.high, 1)}/mois (ou cohort model 6 niveaux déjà dispo) et recalculer LTV/CAC + capacité fin d'horizon.`,
+      fix: "Activer un churn réaliste 2%/mois (ou cohort model 6 niveaux déjà dispo) et recalculer LTV/CAC + capacité fin d'horizon.",
     });
-  } else if (churn < 0.015) {
+  } else if (churn < T.churnMajorThreshold!) {
     out.push({
       id: "churn-low",
       dimension: "Unit economics",
@@ -111,7 +108,7 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
       challenge:
         "Pourquoi toi mieux qu'une box communautaire mature qui tourne à 1.5–3% ? Quelle preuve sur l'historique exploité ?",
       evidence: `Benchmark: ${(SECTOR_BENCHMARKS.churnCrossfitCommunity.low * 100).toFixed(1)}–${(SECTOR_BENCHMARKS.churnCrossfitCommunity.high * 100).toFixed(1)}%/mois.`,
-      fix: `Joindre cohorte rétention réelle (Javelot/ResaWod 24+ mois) ou monter à ${fmtPct(SECTOR_BENCHMARKS.churnCrossfitCommunity.low, 1)}/mois.`,
+      fix: "Joindre cohorte rétention réelle (Javelot/ResaWod 24+ mois) ou monter à 2%/mois.",
     });
   }
 
@@ -127,14 +124,14 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
     fix: "Ventiler par canal (Meta Ads, Google, partenariats, parrainage, evt) avec CAC par canal et budget % CA croissant 1.5–3%.",
   });
 
-  if (ltvOverCac < 3 && isFinite(ltvOverCac)) {
+  if (ltvOverCac < T.ltvCacMin! && isFinite(ltvOverCac)) {
     out.push({
       id: "ltv-cac-ratio",
       dimension: "Unit economics",
       severity: "major",
-      claim: `LTV/CAC ≈ ${ltvOverCac.toFixed(1)}x — sous le seuil VC standard 3x.`,
+      claim: `LTV/CAC ≈ ${ltvOverCac.toFixed(1)}x — sous le seuil VC standard ${T.ltvCacMin}x.`,
       challenge:
-        "Tout VC SaaS/abonnement filtre sur LTV/CAC ≥ 3x. En dessous, l'unité de croissance détruit de la valeur.",
+        `Tout VC SaaS/abonnement filtre sur LTV/CAC ≥ ${T.ltvCacMin}x. En dessous, l'unité de croissance détruit de la valeur.`,
       evidence: `LTV ≈ ${ltv.toFixed(0)}€ (avg price ${avgPrice.toFixed(0)}€ × ${ltvMonths.toFixed(0)} mois) / CAC ≈ ${cacApprox.toFixed(0)}€.`,
       fix: "Soit baisser CAC (organique, parrainage), soit augmenter LTV (rétention, upsell coaching perso).",
     });
@@ -166,7 +163,7 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
   // === CROISSANCE ===
   const growth = p.subs.growthRates ?? [];
   const yoy1 = growth[0] ?? 0;
-  if (yoy1 > 0.3 && churn < 0.02) {
+  if (yoy1 > T.growthMagicYoy! && churn < T.growthMagicChurn!) {
     out.push({
       id: "growth-magic",
       dimension: "Croissance & rétention",
@@ -206,36 +203,16 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
     });
   }
 
-  // Détection « charges URSSAF effectivement nulles » : on calcule le patro effectif
-  // appliqué par le moteur (compute.ts) sur chaque poste. Si la somme est 0, le finding
-  // se déclenche — quelle que soit la valeur de chargesPatroPct ou la présence/absence
-  // de chargesProfiles. Évite à la fois faux négatifs (chargesPatroPct=0 mais profiles
-  // peuplés) et faux positifs (chargesPatroPct=0 mais items catégorisés).
-  const monthlyGrossAll = p.salaries.items.reduce(
-    (s, it) => s + (it.fy26Bump ?? it.monthlyGross) * it.fte,
-    0
-  );
-  const annualEmployerPatro = p.salaries.items.reduce((s, it) => {
-    const patro = getPatroPct(it, p.salaries.chargesProfiles, p.salaries.chargesPatroPct);
-    return s + (it.fy26Bump ?? it.monthlyGross) * it.fte * patro * 12;
-  }, 0);
-  if (annualEmployerPatro <= 0 && monthlyGrossAll > 0) {
-    const profileByCat = (cat: string) =>
-      (p.salaries.chargesProfiles ?? DEFAULT_CHARGES).find((pr) => pr.category === cat);
-    const cadrePatro = profileByCat("cadre")?.patroPct ?? 0.42;
-    const nonCadrePatro = profileByCat("non-cadre")?.patroPct ?? 0.40;
-    const tnsPatro = profileByCat("tns")?.patroPct ?? 0.45;
-    const apprentiPatro = profileByCat("apprenti")?.patroPct ?? 0.10;
-    const annualMissingPatro = monthlyGrossAll * cadrePatro * 12;
+  if (p.salaries.chargesPatroPct === 0) {
     out.push({
       id: "charges-patro-zero",
       dimension: "Coûts & opérations",
       severity: "kill",
-      claim: "Charges patronales effectives = 0% — modèle URSSAF désactivé.",
+      claim: "Charges patronales = 0% — modèle URSSAF désactivé.",
       challenge:
-        `Standard cadre FR ≈ ${fmtPct0(cadrePatro)}, non-cadre ≈ ${fmtPct0(nonCadrePatro)}. Sur ~${Math.round(monthlyGrossAll).toLocaleString("fr-FR")}€/mois bruts × ${fmtPct0(cadrePatro)} = +${Math.round(annualMissingPatro / 1000)}k€/an de charges manquantes. Le P&L est biaisé d'autant.`,
-      evidence: `chargesPatroPct=${p.salaries.chargesPatroPct}, aucun poste salarié ne porte de category exploitable.`,
-      fix: `Affecter une category à chaque poste (cadre ${fmtPct0(cadrePatro)}, non-cadre ${fmtPct0(nonCadrePatro)}, tns ${fmtPct0(tnsPatro)} pour associés-gérants majoritaires, apprenti ${fmtPct0(apprentiPatro)}) ou fixer chargesPatroPct global.`,
+        "Standard cadre FR ≈ 42%, non-cadre ≈ 40%. Sur ~16 500€/mois bruts cadres × 42% = +83 000€/an de charges manquantes. Le P&L est biaisé d'autant.",
+      evidence: `chargesPatroPct=${p.salaries.chargesPatroPct}.`,
+      fix: "Activer 42% cadre, 40% non-cadre, 22% TNS pour associés-gérants, 10% apprenti.",
     });
   }
 
@@ -249,13 +226,13 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
       challenge:
         "Acquisition coûte plus cher quand le ramp s'accélère. Un budget flat = sous-investissement en croissance ou sur-investissement en début.",
       evidence: `marketing.pctOfRevenue=${p.marketing.pctOfRevenue}.`,
-      fix: `Mix part fixe + part % CA (cible ${fmtPct(SECTOR_BENCHMARKS.marketingPctOfRevenueFitness.low, 1)}–${fmtPct(SECTOR_BENCHMARKS.marketingPctOfRevenueFitness.high, 1)} du CA, IHRSA fitness club) pour scaler avec le ramp.`,
+      fix: "Mix 50% fixe + 50% % CA (~2%) pour scaler.",
     });
   }
 
   // Loyer Y1→Y2 jump
   const rent = p.rent.monthlyByFy ?? [];
-  if (rent.length >= 2 && rent[0] > 0 && rent[1] / rent[0] > 1.3) {
+  if (rent.length >= 2 && rent[0] > 0 && rent[1] / rent[0] > T.rentJumpRatio!) {
     const jump = ((rent[1] / rent[0] - 1) * 100).toFixed(0);
     out.push({
       id: "rent-jump",
@@ -270,34 +247,29 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
   }
 
   // === COMPTA & FISCAL ===
-  if (p.tax.enableIs === false && cumulativeNetIncome > 50000) {
+  if (p.tax.enableIs === false && cumulativeNetIncome > T.isThresholdNetIncome!) {
     out.push({
       id: "is-disabled",
       dimension: "Comptabilité & fiscal",
       severity: "kill",
       claim: `IS désactivé alors que résultat net cumulé = ${(cumulativeNetIncome / 1000).toFixed(0)}k€.`,
       challenge:
-        `Un résultat positif sans IS, c'est un P&L hors-loi fiscale. Surévaluation systématique du net de ~${fmtPct0(p.tax.isRate)}. Aucun banquier ou VC ne valide.`,
+        "Un résultat positif sans IS, c'est un P&L hors-loi fiscale. Surévaluation systématique du net de ~25%. Aucun banquier ou VC ne valide.",
       evidence: `tax.enableIs=${p.tax.enableIs}, cumulativeNetIncome=${cumulativeNetIncome.toFixed(0)}€.`,
-      fix: `Activer IS ${fmtPct0(p.tax.isRate)} (FR PME standard ${fmtPct0(SECTOR_BENCHMARKS.isRateFR.high)} ; taux réduit ${fmtPct0(SECTOR_BENCHMARKS.isRateFR.low)} jusque 42 500€). Carry-forward déficits déjà supporté.`,
+      fix: "Activer IS 25% (15% jusque 42 500€). Carry-forward déficits déjà supporté.",
     });
   }
 
-  if (p.tax.enableDA === false && totalCapex > 50000) {
-    const yEquip = p.tax.amortYearsEquipment ?? p.tax.daYears ?? 5;
-    const yTrav = p.tax.amortYearsTravaux ?? Math.max(p.tax.daYears ?? 10, 10);
-    const annualDaEstimate =
-      p.capex.equipment / Math.max(1, yEquip) +
-      p.capex.travaux / Math.max(1, yTrav);
+  if (p.tax.enableDA === false && totalCapex > T.daThresholdCapex!) {
     out.push({
       id: "da-disabled",
       dimension: "Comptabilité & fiscal",
       severity: "major",
       claim: `Amortissements désactivés alors que CAPEX = ${(totalCapex / 1000).toFixed(0)}k€.`,
       challenge:
-        `Le CAPEX doit être amorti — sinon c'est de la création de cash gratuite dans le bilan. ~${Math.round(annualDaEstimate / 1000)}k€/an d'amortissement manquant qui réduit l'IS et la marge nette.`,
+        "Le CAPEX doit être amorti — sinon c'est de la création de cash gratuite dans le bilan. ~25-35k€/an d'amortissement manquant qui réduit l'IS et la marge nette.",
       evidence: `tax.enableDA=${p.tax.enableDA}.`,
-      fix: `Activer D&A linéaire ${yEquip} ans équipement, ${yTrav} ans travaux.`,
+      fix: "Activer D&A linéaire 5 ans équipement, 10 ans travaux.",
     });
   }
 
@@ -317,7 +289,7 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
   // === FINANCEMENT ===
   if (totalRaised > 0) {
     const dRatio = totalDebt / totalRaised;
-    if (dRatio > FINANCING_RATE_THRESHOLDS.debtToTotalWarn) {
+    if (dRatio > T.debtRatioMax!) {
       out.push({
         id: "debt-equity-ratio",
         dimension: "Financement & dilution",
@@ -332,7 +304,7 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
   }
 
   for (const bond of p.financing.bonds ?? []) {
-    if (bond.capitalizeInterest && (bond.deferralYears ?? 0) >= 2) {
+    if (bond.capitalizeInterest && (bond.deferralYears ?? 0) >= T.bondDeferralMinYears!) {
       const effRate =
         Math.pow(1 + bond.annualRatePct / 100, bond.deferralYears ?? 0) - 1;
       out.push({
@@ -354,7 +326,7 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
   if (totalShares > 0) {
     const founders = sh.filter((x) => x.type === "founder");
     const founderPct = founders.reduce((s: number, x) => s + x.shares, 0) / totalShares;
-    if (founderPct < 0.6) {
+    if (founderPct < T.founderMinPct!) {
       out.push({
         id: "cap-table-founder-low",
         dimension: "Financement & dilution",
@@ -380,7 +352,7 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
       evidence: `cashTroughMonth=${r.cashTroughMonth}.`,
       fix: "Renforcer apports, accélérer revenue, réduire CAPEX, ou décaler embauches.",
     });
-  } else if (r.cashTroughValue < CASH_THRESHOLDS.comfortEur) {
+  } else if (r.cashTroughValue < T.cashBufferThinEur!) {
     out.push({
       id: "cash-thin",
       dimension: "Financement & dilution",
@@ -389,7 +361,7 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
       challenge:
         "Un buffer < 3 mois d'OPEX expose à n'importe quel choc (panne, retard travaux, churn imprévu). Un VC veut voir 3-6 mois de runway permanent.",
       evidence: `cashTroughValue=${r.cashTroughValue}.`,
-      fix: `Lever +50-100k€ supplémentaire ou ouvrir ligne découvert (cible ≥ ${(CASH_THRESHOLDS.comfortEur / 1000).toFixed(0)}k€).`,
+      fix: "Lever +50-100k€ supplémentaire ou ouvrir ligne découvert 50k€.",
     });
   }
 

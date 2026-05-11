@@ -1,12 +1,5 @@
 import type { ModelParams, ModelResult } from "./model/types";
-import {
-  CASH_THRESHOLDS,
-  BFR_DAYS_THRESHOLDS,
-  SATURATION_THRESHOLDS,
-  FINANCING_RATE_THRESHOLDS,
-  COACHING_HEURISTICS,
-  EBITDA_THRESHOLDS,
-} from "./thresholds";
+import { getAuditThresholds, getCapacityHeuristics } from "./model/defaults";
 
 export type Severity = "critical" | "warning" | "info" | "ok";
 
@@ -25,6 +18,8 @@ const PARAMS_LINK = { href: "/parameters", label: "Modifier les paramètres" };
 
 export function runHealthCheck(p: ModelParams, result?: ModelResult): HealthIssue[] {
   const issues: HealthIssue[] = [];
+  const T = getAuditThresholds(p);
+  const CH = getCapacityHeuristics(p);
 
   // 1. Mix abos = 100%
   const totalMix = p.subs.tiers.reduce((s, t) => s + t.mixPct, 0);
@@ -110,12 +105,12 @@ export function runHealthCheck(p: ModelParams, result?: ModelResult): HealthIssu
           (p.bfr.daysStock ?? 0)
       )
     : p.bfr.daysOfRevenue;
-  if (bfrDaysNet < 0 || bfrDaysNet > BFR_DAYS_THRESHOLDS.warning) {
+  if (bfrDaysNet < 0 || bfrDaysNet > T.bfrWarnDays!) {
     issues.push({
       id: "bfr-extreme",
-      severity: bfrDaysNet < 0 || bfrDaysNet > BFR_DAYS_THRESHOLDS.critical ? "critical" : "warning",
+      severity: bfrDaysNet < 0 || bfrDaysNet > T.bfrCriticalDays! ? "critical" : "warning",
       title: "BFR extrême",
-      message: `BFR net effectif = ${bfrDaysNet.toFixed(0)} jours de CA. Plage attendue: 0-${BFR_DAYS_THRESHOLDS.warning}j pour activité service B2C.`,
+      message: `BFR net effectif = ${bfrDaysNet.toFixed(0)} jours de CA. Plage attendue: 0-${T.bfrWarnDays}j pour activité service B2C.`,
       paths: ["bfr.daysOfRevenue", "bfr.daysReceivables", "bfr.daysSupplierPayables"],
       link: PARAMS_LINK,
     });
@@ -162,12 +157,12 @@ export function runHealthCheck(p: ModelParams, result?: ModelResult): HealthIssu
         hint: "Renforce les apports, accélère la revenue ou réduis les CAPEX/OPEX.",
         link: { href: "/cashflow", label: "Voir trésorerie" },
       });
-    } else if (result.cashTroughValue < CASH_THRESHOLDS.thinEur) {
+    } else if (result.cashTroughValue < T.cashThinHealthEur!) {
       issues.push({
         id: "cash-thin",
         severity: "warning",
         title: "Buffer trésorerie tendu",
-        message: `Creux de tréso = ${formatEur(result.cashTroughValue)}. Marge de sécurité < ${formatEur(CASH_THRESHOLDS.thinEur)}.`,
+        message: `Creux de tréso = ${formatEur(result.cashTroughValue)}. Marge de sécurité < ${formatEur(T.cashThinHealthEur!)}.`,
         link: { href: "/cashflow", label: "Voir trésorerie" },
       });
     }
@@ -200,8 +195,6 @@ export function runHealthCheck(p: ModelParams, result?: ModelResult): HealthIssu
 
       const cap = p.capacity;
       const hasPlanner = !!(cap?.areas && cap.weeklySchedule && cap.areas.length > 0);
-      const satWarn = SATURATION_THRESHOLDS.warning;
-      const satCrit = SATURATION_THRESHOLDS.critical;
       if (cap && hasPlanner) {
         // Calcul correct utilisant le planner: places offertes = Σ areas (cours/sem × capacité) × 4.3
         const lastFyIdx = result.yearly.length - 1;
@@ -212,10 +205,10 @@ export function runHealthCheck(p: ModelParams, result?: ModelResult): HealthIssu
         const slotsOfferedPerMonth = classesPerWeekPerArea * totalCapacity * 4.3 * scale;
         const sessionsDemand = subsCount * cap.avgSessionsPerMonth;
         const saturation = slotsOfferedPerMonth > 0 ? sessionsDemand / slotsOfferedPerMonth : 0;
-        if (saturation > satWarn) {
+        if (saturation > T.capacityAlertSaturation!) {
           issues.push({
             id: "capacity",
-            severity: saturation > satCrit ? "critical" : "warning",
+            severity: saturation > T.capacityCriticalSaturation! ? "critical" : "warning",
             title: `Capacité ${(saturation * 100).toFixed(0)}% en fin d'horizon`,
             message: `${Math.round(subsCount)} membres × ${cap.avgSessionsPerMonth} sessions = ${Math.round(sessionsDemand)} places demandées vs ${Math.round(slotsOfferedPerMonth)} offertes (${cap.areas!.length} espaces × ${classesPerWeekPerArea} cours/sem × cap moy ${(totalCapacity / Math.max(1, cap.areas!.length)).toFixed(1)}).`,
             hint: "Augmente le nb de cours/jour dans /capacity-planner, le scaling FY, ou ajoute un espace.",
@@ -226,15 +219,15 @@ export function runHealthCheck(p: ModelParams, result?: ModelResult): HealthIssu
         // Capacity définie mais sans planner: heuristique avec slotsPerHour × heures coach
         const slotsPerHour = cap.parallelClasses * cap.capacityPerClass;
         const cadreCoachItems = p.salaries.items.filter((it) => /coach|head/i.test(it.role));
-        const cadreHours = cadreCoachItems.reduce((s, it) => s + it.fte * COACHING_HEURISTICS.monthlyHoursPerCadreFte, 0);
+        const cadreHours = cadreCoachItems.reduce((s, it) => s + it.fte * CH.coachHoursPerFteMonth!, 0);
         const totalHours = monthlyCoachHours + cadreHours;
         const sessionsSupply = totalHours * slotsPerHour;
         const sessionsDemand = subsCount * cap.avgSessionsPerMonth;
         const saturation = sessionsSupply > 0 ? sessionsDemand / sessionsSupply : 0;
-        if (saturation > satWarn) {
+        if (saturation > T.capacityAlertSaturation!) {
           issues.push({
             id: "capacity",
-            severity: saturation > satCrit ? "critical" : "warning",
+            severity: saturation > T.capacityCriticalSaturation! ? "critical" : "warning",
             title: `Capacité ${(saturation * 100).toFixed(0)}% en fin d'horizon`,
             message: `${Math.round(subsCount)} membres × ${cap.avgSessionsPerMonth} sessions = ${Math.round(sessionsDemand)} demandées vs ${Math.round(sessionsSupply)} offertes (${slotsPerHour} slots/h × ${Math.round(totalHours)}h coach).`,
             hint: "Configure le planner détaillé /capacity-planner pour un calcul précis.",
@@ -242,19 +235,17 @@ export function runHealthCheck(p: ModelParams, result?: ModelResult): HealthIssu
           });
         }
       } else {
-        // Heuristique fallback : sessions/membre/mois pris du modèle si dispo, sinon constante coaching.
-        const sessionsPerMember =
-          p.capacity?.avgSessionsPerMonth ?? COACHING_HEURISTICS.fallbackSessionsPerMember;
-        const hoursDemanded = subsCount * sessionsPerMember;
+        // Heuristique fallback: h/membre/mois + h/FTE coach paramétrables (capacityHeuristics).
+        const hoursDemanded = subsCount * CH.memberHoursDemandPerMonth!;
         const cadreCoachItems = p.salaries.items.filter((it) =>
           /coach|head/i.test(it.role)
         );
-        const cadreHours = cadreCoachItems.reduce((s, it) => s + it.fte * COACHING_HEURISTICS.monthlyHoursPerCadreFte, 0);
+        const cadreHours = cadreCoachItems.reduce((s, it) => s + it.fte * CH.coachHoursPerFteMonth!, 0);
         const totalHoursAvailable = monthlyCoachHours + cadreHours;
-        if (totalHoursAvailable > 0 && hoursDemanded > totalHoursAvailable * satWarn) {
+        if (totalHoursAvailable > 0 && hoursDemanded > totalHoursAvailable * T.capacityAlertSaturation!) {
           issues.push({
             id: "capacity",
-            severity: hoursDemanded > totalHoursAvailable * satCrit ? "critical" : "warning",
+            severity: hoursDemanded > totalHoursAvailable ? "critical" : "warning",
             title: "Capacité coaching saturée (heuristique)",
             message: `${subsCount} membres → ~${hoursDemanded}h/mois de demande vs ${totalHoursAvailable.toFixed(0)}h offertes.`,
             hint: "Active la capacité paramétrée sur /capacity pour un calcul précis.",
@@ -265,7 +256,7 @@ export function runHealthCheck(p: ModelParams, result?: ModelResult): HealthIssu
     }
 
     // 12. Marge EBITDA finale très négative
-    if (lastFy && lastFy.totalRevenue > 0 && lastFy.ebitdaMargin < EBITDA_THRESHOLDS.warningMargin) {
+    if (lastFy && lastFy.totalRevenue > 0 && lastFy.ebitdaMargin < T.ebitdaMarginAlertNeg!) {
       issues.push({
         id: "ebitda-margin",
         severity: "warning",
@@ -277,26 +268,24 @@ export function runHealthCheck(p: ModelParams, result?: ModelResult): HealthIssu
   }
 
   // 13. Taux d'emprunts cohérents
-  const rateMin = FINANCING_RATE_THRESHOLDS.minPct;
-  const rateMax = FINANCING_RATE_THRESHOLDS.maxPct;
   for (const loan of p.financing.loans ?? []) {
-    if (loan.annualRatePct < rateMin || loan.annualRatePct > rateMax) {
+    if (loan.annualRatePct < 0 || loan.annualRatePct > T.loanRateMaxPlausiblePct!) {
       issues.push({
         id: `loan-${loan.id}`,
         severity: "warning",
         title: `Emprunt "${loan.name}": taux suspect`,
-        message: `Taux ${loan.annualRatePct}% hors plage usuelle [${rateMin}-${rateMax}%].`,
+        message: `Taux ${loan.annualRatePct}% hors plage usuelle [0-15%].`,
         link: { href: "/financing", label: "Voir financement" },
       });
     }
   }
   for (const bond of p.financing.bonds ?? []) {
-    if (bond.annualRatePct < rateMin || bond.annualRatePct > rateMax) {
+    if (bond.annualRatePct < 0 || bond.annualRatePct > T.loanRateMaxPlausiblePct!) {
       issues.push({
         id: `bond-${bond.id}`,
         severity: "warning",
         title: `Obligation "${bond.name}": taux suspect`,
-        message: `Taux ${bond.annualRatePct}% hors plage usuelle [${rateMin}-${rateMax}%].`,
+        message: `Taux ${bond.annualRatePct}% hors plage usuelle [0-15%].`,
         link: { href: "/financing", label: "Voir financement" },
       });
     }

@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Check, Copy, Skull, ShieldAlert, Flame, Eye, FileLock2 } from "lucide-react";
 import { computeModel } from "@/lib/model/compute";
 import type { ModelParams } from "@/lib/model/types";
+import { getAuditThresholds } from "@/lib/model/defaults";
 import { runVCAudit, severityLabel, VC_PROMPT, type VCFinding, type VCSeverity, type VCDimension } from "@/lib/vc-audit";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,11 +55,15 @@ export function VCDevilClient({
   }, [findings]);
 
   const verdict = useMemo(() => {
-    if (counts.kill > 0) return { label: "PAS INVESTABLE EN L'ÉTAT", tone: "bg-red-600 text-white" };
-    if (counts.major >= 4) return { label: "À CORRIGER AVANT PITCH", tone: "bg-orange-500 text-white" };
-    if (counts.major >= 1) return { label: "DÉFENDABLE MAIS FRAGILE", tone: "bg-yellow-400 text-yellow-950" };
+    const T = getAuditThresholds(params);
+    if (counts.kill >= T.verdictKillMinCount!)
+      return { label: "PAS INVESTABLE EN L'ÉTAT", tone: "bg-red-600 text-white" };
+    if (counts.major >= T.verdictMajorBlockingCount!)
+      return { label: "À CORRIGER AVANT PITCH", tone: "bg-orange-500 text-white" };
+    if (counts.major >= T.verdictMajorWarnCount!)
+      return { label: "DÉFENDABLE MAIS FRAGILE", tone: "bg-yellow-400 text-yellow-950" };
     return { label: "INVESTOR-READY (sous réserve)", tone: "bg-emerald-600 text-white" };
-  }, [counts]);
+  }, [counts, params]);
 
   const [copied, setCopied] = useState(false);
   const onCopy = async () => {

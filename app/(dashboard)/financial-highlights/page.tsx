@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { useModelStore } from "@/lib/store";
 import { computeModel } from "@/lib/model/compute";
+import { getInvestorAssumptions } from "@/lib/model/defaults";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
@@ -37,8 +38,12 @@ export default function FinancialHighlightsPage() {
   const totalEquity = (params.financing.equity ?? []).reduce((s, x) => s + x.amount, 0);
   const cumulativeNetIncome = result.yearly.reduce((s, y) => s + y.netIncome, 0);
   const totalEbitda5y = result.yearly.reduce((s, y) => s + y.ebitda, 0);
-  // Multiple = (EBITDA last × 5x) / equity invested (proxy)
-  const exitMultiple = totalEquity > 0 ? (lastFy.ebitda * 5) / totalEquity : 0;
+  // Multiple investisseur = (EBITDA dernière FY × multiple sortie) / equity invested.
+  // Le multiple de sortie est lu depuis params.investorAssumptions.exitMultipleEbitda
+  // pour rester cohérent avec /investor (auparavant hardcoded 5x ici, ce qui divergeait
+  // du slider /investor configuré par l'utilisateur).
+  const exitMultipleEbitda = getInvestorAssumptions(params).exitMultipleEbitda!;
+  const exitMultiple = totalEquity > 0 ? (lastFy.ebitda * exitMultipleEbitda) / totalEquity : 0;
 
   const breakEvenLabel =
     result.breakEvenMonth !== null
@@ -169,7 +174,7 @@ export default function FinancialHighlightsPage() {
           <Kpi
             label="Multiple investisseur"
             value={`${exitMultiple.toFixed(1)}×`}
-            sub="EBITDA × 5 / equity"
+            sub={`EBITDA × ${exitMultipleEbitda} / equity`}
             icon={<Target className="h-4 w-4" />}
           />
           <Kpi

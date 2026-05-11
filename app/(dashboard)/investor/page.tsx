@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { useModelStore } from "@/lib/store";
 import { computeModel, computeFinanceFlows } from "@/lib/model/compute";
+import { getAuditThresholds, getInvestorAssumptions } from "@/lib/model/defaults";
 import {
   computeDSCRDetailed,
   equityInvestorReturn,
@@ -38,9 +39,11 @@ export default function InvestorMetricsPage() {
     [params, result.horizonMonths]
   );
 
-  const [exitMultiple, setExitMultiple] = useState(5);
-  const [discountRate, setDiscountRate] = useState(0.10);
-  const [retentionMonths, setRetentionMonths] = useState(24);
+  const assumptions = getInvestorAssumptions(params);
+  const thresholds = getAuditThresholds(params);
+  const [exitMultiple, setExitMultiple] = useState(assumptions.exitMultipleEbitda!);
+  const [discountRate, setDiscountRate] = useState(assumptions.discountRate!);
+  const [retentionMonths, setRetentionMonths] = useState(assumptions.retentionMonthsFallback!);
 
   const dscrEntries = computeDSCRDetailed(result);
   const equityRet = equityInvestorReturn(result, params, exitMultiple);
@@ -122,7 +125,7 @@ export default function InvestorMetricsPage() {
                 "text-2xl font-bold mt-1 " +
                 (equityRet.irr === null
                   ? ""
-                  : equityRet.irr > 0.15
+                  : equityRet.irr > thresholds.irrGoodThreshold!
                   ? "text-emerald-600"
                   : equityRet.irr > 0
                   ? "text-amber-600"
@@ -257,9 +260,9 @@ export default function InvestorMetricsPage() {
                       "text-right font-mono " +
                       (d.dscr === Infinity
                         ? ""
-                        : d.dscr >= 1.2
+                        : d.dscr >= thresholds.dscrGoodThreshold!
                         ? "text-emerald-700"
-                        : d.dscr >= 1
+                        : d.dscr >= thresholds.dscrLimitThreshold!
                         ? "text-amber-700"
                         : "text-red-700")
                     }
@@ -269,9 +272,9 @@ export default function InvestorMetricsPage() {
                   <TableCell className="text-right">
                     {d.dscr === Infinity ? (
                       <span className="text-xs text-muted-foreground">Pas de dette</span>
-                    ) : d.dscr >= 1.2 ? (
+                    ) : d.dscr >= thresholds.dscrGoodThreshold! ? (
                       <CheckCircle2 className="h-4 w-4 text-emerald-600 inline" />
-                    ) : d.dscr >= 1 ? (
+                    ) : d.dscr >= thresholds.dscrLimitThreshold! ? (
                       <span className="text-xs text-amber-700">Limite</span>
                     ) : (
                       <AlertTriangle className="h-4 w-4 text-red-600 inline" />
@@ -342,9 +345,9 @@ export default function InvestorMetricsPage() {
               <span
                 className={
                   "font-mono font-bold " +
-                  (ltv.ratio >= 3
+                  (ltv.ratio >= thresholds.ltvCacGoodThreshold!
                     ? "text-emerald-700"
-                    : ltv.ratio >= 1
+                    : ltv.ratio >= thresholds.ltvCacWarnThreshold!
                     ? "text-amber-700"
                     : "text-red-700")
                 }

@@ -1,4 +1,6 @@
 import type { ModelResult, ModelParams } from "./model/types";
+import { getInvestorAssumptions } from "./model/defaults";
+import { monthlyAcquisitions } from "./model/compute";
 
 // IRR via Newton-Raphson on monthly cashflows
 export function irrMonthly(cashflows: number[], guess = 0.01): number | null {
@@ -79,10 +81,11 @@ export function computeDSCRDetailed(result: ModelResult): DSCREntry[] {
 
 // Multiple investisseur equity: total returns / equity invested
 // Hypothèse simple: investisseur reçoit dividendes (= part de net income) + exit valuation = book value FY final
+// `exitMultipleEbitda` optionnel — si non fourni, lit params.investorAssumptions.exitMultipleEbitda (default 5).
 export function equityInvestorReturn(
   result: ModelResult,
   params: ModelParams,
-  exitMultipleEbitda = 5
+  exitMultipleEbitda?: number
 ): {
   invested: number;
   cashflows: number[];
@@ -92,13 +95,14 @@ export function equityInvestorReturn(
   irr: number | null;
 } {
   const totalEquity = (params.financing.equity ?? []).reduce((s, x) => s + x.amount, 0);
+  const ebitdaMultiple = exitMultipleEbitda ?? getInvestorAssumptions(params).exitMultipleEbitda!;
 
   // Cashflows perspective investisseur: -invested au M0, dividendes = 0 (reinvestis), exit = EBITDA × multiple en M final
   const cashflows = new Array(result.horizonMonths + 1).fill(0);
   cashflows[0] = -totalEquity;
   // Sortie = EBITDA dernière année × multiple
   const lastEbitda = result.yearly[result.yearly.length - 1].ebitda;
-  const exitVal = Math.max(0, lastEbitda * exitMultipleEbitda);
+  const exitVal = Math.max(0, lastEbitda * ebitdaMultiple);
   cashflows[result.horizonMonths] = exitVal;
 
   const totalReturn = cashflows.reduce((s, x) => s + x, 0) + totalEquity;
@@ -140,11 +144,13 @@ export type TierLtvEntry = {
   ltv: number;
 };
 
-export function ltvByTier(params: ModelParams, fallbackRetention = 24): TierLtvEntry[] {
+export function ltvByTier(params: ModelParams, fallbackRetention?: number): TierLtvEntry[] {
   const fallbackChurn = params.subs.monthlyChurnPct ?? 0;
+  const retentionFallback =
+    fallbackRetention ?? getInvestorAssumptions(params).retentionMonthsFallback!;
   return params.subs.tiers.map((t) => {
     const churn = t.monthlyChurnPct ?? fallbackChurn;
-    const retention = churn > 0 ? 1 / churn : fallbackRetention;
+    const retention = churn > 0 ? 1 / churn : retentionFallback;
     return {
       tierId: t.id,
       tierName: t.name,
@@ -159,20 +165,31 @@ export function ltvByTier(params: ModelParams, fallbackRetention = 24): TierLtvE
 
 // LTV simplifié: prix moyen TTC × durée moyenne d'abonnement (mois).
 // Si `monthlyChurnPct` > 0, durée moyenne = 1 / churn (formule analytique cohort exponentiel).
-// Sinon fallback override `avgRetentionMonths` (24 mois par défaut).
-export function ltvCac(params: ModelParams, result: ModelResult, avgRetentionMonthsOverride = 24) {
+// Sinon fallback override `avgRetentionMonths` (lit params.investorAssumptions.retentionMonthsFallback).
+//
+// CAC année 1: marketing total Y1 / acquisitions cumulées sur 12 premiers mois.
+// Auparavant le code utilisait `result.monthly[11].subsCount` (= stock fin Y1, pas acquisitions) →
+// bug qui sous-estimait le CAC et gonflait artificiellement le ratio LTV/CAC affiché à
+// l'investisseur. Corrigé : on appelle `monthlyAcquisitions(params, H)` puis somme [0..11].
+export function ltvCac(
+  params: ModelParams,
+  result: ModelResult,
+  avgRetentionMonthsOverride?: number
+) {
   const avgPriceTTC = params.subs.tiers.reduce((s, t) => s + t.monthlyPrice * t.mixPct, 0);
   const churn = params.subs.monthlyChurnPct ?? 0;
-  const avgRetentionMonths = churn > 0 ? 1 / churn : avgRetentionMonthsOverride;
+  const fallbackRetention =
+    avgRetentionMonthsOverride ?? getInvestorAssumptions(params).retentionMonthsFallback!;
+  const avgRetentionMonths = churn > 0 ? 1 / churn : fallbackRetention;
   const ltv = avgPriceTTC * avgRetentionMonths;
 
-  // CAC année 1: marketing total / nouveaux abos cumulés année 1
   const fy1 = result.yearly[0];
-  const newSubsFy1 =
-    result.monthly[result.monthly.length - 1] && result.monthly.length > 11
-      ? result.monthly[11].subsCount
-      : 0;
-  const cac = newSubsFy1 > 0 ? fy1.marketing / newSubsFy1 : 0;
+  const acquisitionsY1 = result.horizonMonths >= 12
+    ? monthlyAcquisitions(params, result.horizonMonths)
+        .slice(0, 12)
+        .reduce((s, v) => s + v, 0)
+    : 0;
+  const cac = acquisitionsY1 > 0 ? fy1.marketing / acquisitionsY1 : 0;
 
   return {
     avgPriceTTC,
@@ -180,5 +197,6 @@ export function ltvCac(params: ModelParams, result: ModelResult, avgRetentionMon
     ltv,
     cac,
     ratio: cac > 0 ? ltv / cac : Infinity,
+    acquisitionsY1,
   };
 }

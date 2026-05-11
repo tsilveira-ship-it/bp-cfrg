@@ -3,6 +3,7 @@ import { useState, useMemo } from "react";
 import { useModelStore } from "@/lib/store";
 import { computeModel } from "@/lib/model/compute";
 import type { ModelParams } from "@/lib/model/types";
+import { getStressScenarios } from "@/lib/model/defaults";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
 import { SynthesisCard } from "@/components/synthesis-card";
@@ -167,61 +168,27 @@ export default function SensitivityPage() {
   const baseLast = baseResult.yearly[baseResult.yearly.length - 1];
   const sensLast = sensResult.yearly[sensResult.yearly.length - 1];
 
-  const applyStress = (kind: "pessimist" | "base" | "optimist" | "recession" | "forceMajeure" | "refinancing") => {
-    switch (kind) {
-      case "pessimist":
-        setSliders({
-          ...DEFAULT_SLIDERS,
-          caMultiplier: 0.8,
-          salaryMultiplier: 1.1,
-          rentMultiplier: 1.05,
-          churnMultiplier: 1.3,
-        });
-        toast.warning("Pessimiste : -20% CA, +10% salaires, +5% loyer, churn +30%");
-        break;
-      case "optimist":
-        setSliders({
-          ...DEFAULT_SLIDERS,
-          caMultiplier: 1.2,
-          marketingMultiplier: 1.1,
-          churnMultiplier: 0.85,
-        });
-        toast.success("Optimiste : +20% CA, +10% marketing, churn -15%");
-        break;
-      case "recession":
-        setSliders({
-          ...DEFAULT_SLIDERS,
-          caMultiplier: 0.75,
-          salaryMultiplier: 1.05,
-          priceIndexMultiplier: 0,
-          churnMultiplier: 1.5,
-          loanRateMultiplier: 1.4,
-          marketingMultiplier: 0.7,
-        });
-        toast.warning("Récession : -25% CA, churn +50%, taux +40%, prix gelés, marketing -30%");
-        break;
-      case "forceMajeure":
-        setSliders({
-          ...DEFAULT_SLIDERS,
-          caMultiplier: 0.5,
-          churnMultiplier: 1.8,
-          marketingMultiplier: 0.5,
-        });
-        toast.error("Force majeure : -50% CA temporaire, churn ×1.8 (lockdown / sinistre)");
-        break;
-      case "refinancing":
-        setSliders({
-          ...DEFAULT_SLIDERS,
-          loanRateMultiplier: 1.7,
-          openingDelayMonths: 3,
-          caMultiplier: 0.95,
-        });
-        toast.warning("Refinancement difficile : taux ×1.7, retard 3 mois, -5% CA");
-        break;
-      case "base":
-        setSliders(DEFAULT_SLIDERS);
-        break;
+  // Scénarios chargés depuis params.stressScenarios (fallback DEFAULT_PARAMS). Permet à
+  // l'utilisateur de définir ses propres stress tests sans recompile.
+  const stressScenarios = useMemo(() => getStressScenarios(params), [params]);
+
+  const applyStress = (kind: string) => {
+    if (kind === "base") {
+      setSliders(DEFAULT_SLIDERS);
+      return;
     }
+    const sc = stressScenarios.find((s) => s.id === kind);
+    if (!sc) return;
+    setSliders({ ...DEFAULT_SLIDERS, ...sc.sliders });
+    const toaster =
+      sc.tone === "error"
+        ? toast.error
+        : sc.tone === "success"
+        ? toast.success
+        : sc.tone === "info"
+        ? toast.info
+        : toast.warning;
+    toaster(sc.label);
   };
 
   const setSlider = <K extends keyof Sliders>(k: K, v: Sliders[K]) =>
