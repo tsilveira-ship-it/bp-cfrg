@@ -119,6 +119,23 @@ export const ANALYSES: Record<string, string> = {
   // ─── Audit ───
   "Économies cumulées": "Total annuel d'économies si toutes les optimisations proposées sont appliquées.",
   "Break-even": "Mois où l'EBITDA cumulé devient positif. Le business 'rembourse' ses pertes initiales.",
+
+  // ─── Niveau 6 — Modélisation avancée ───
+  "Mode cohort": "Au lieu d'imposer un stock cible (ramp 80→200), on saisit les acquisitions brutes/mois et chaque cohorte décroît selon la rétention. Modélisation plus fidèle car découplée: si churn double, on voit immédiatement l'impact, sans avoir à 'corriger' à la main le stock cible.",
+  "Acquisitions brutes": "Membres acquis chaque mois AVANT churn. Différent du NET (acquis − partis). Pour acquérir 50 NET/mois avec churn 2%, il faut acquérir ~80-90 brut.",
+  "Cohorte": "Groupe de membres entrés le même mois. Chaque cohorte décroît selon sa propre courbe de rétention. Permet d'isoler l'impact d'un canal marketing sur sa cohorte spécifique.",
+  "Rétention équivalente": "Espérance de durée d'abonnement. Calculée comme 1/churn en mode exponentiel (loi géométrique) ou Σ courbe[t] en mode courbe empirique. Sert au LTV.",
+  "Courbe rétention": "Override la formule exp(1−churn)^t. Saisir % survivants à M0/M1/M3/M6/M12/M24. Utile pour modéliser un 'newbie drop' typique CrossFit (gros départ M1-M3, stabilisation après).",
+  "Newbie drop": "Phénomène commun dans le fitness : 30-40% de nouveaux abonnés partent dans les 3 premiers mois. La courbe exponentielle classique sous-estime cette chute initiale.",
+  "Mix évolutif": "Le mix entre tiers d'abonnement (ex 30% illimité, 40% 12 séances) peut évoluer par FY. Permet de modéliser une montée en gamme progressive (40% → 55% premium sur 5 ans).",
+  "Canaux d'acquisition": "Décomposition de l'acquisition par source (brochure, ResaWod, SEO, parrainage, ads). Chaque canal a son CAC et son mix. Permet un CAC pondéré réaliste plutôt qu'une moyenne implicite marketing/acquisitions.",
+  "Saisonnalité acquisition": "Modulation différenciée du nombre de bilans/acquisitions par mois calendaire. Sept ×1.20 = +20% d'acquisitions en septembre vs moyenne annuelle. Distinct de la saisonnalité globale du CA.",
+  "Saisonnalité churn": "Modulation du churn par mois calendaire. Juillet ×1.5 = churn 50% plus élevé en été (vacances, désabos avant été). Indépendant de la courbe de rétention; si courbe active, modulation churn est ignorée.",
+  "Pause/freeze": "% moyen de membres en pause d'abonnement à un instant donné. Ils ne paient pas mais ne sont pas churnés. Typique CrossFit 2-5% (vacances, blessures, déplacements pro).",
+  "Bilan funnel": "Modélisation explicite du funnel séance découverte 19,90€ → abonnement. acquisitions[m] = bilans[m] × conversion%. Permet d'attaquer le sujet par le côté commercial (X bilans/mois nécessaires).",
+  "Saturation capacité": "Demande de places (membres × sessions/mois) divisée par la capacité offerte (espaces × cours/sem × cap/cours × 4.3). >1 = on refuse des membres. À comparer à la heatmap pour trouver le créneau saturé.",
+  "Cohort sum": "count[m] = Σ_{k=0..m} acquisitions[k] × retention(m−k). Formule mathématique standard pour modéliser un stock à partir d'acquisitions et de rétention. O(H²) en calcul.",
+  "Little's law": "Steady-state: stock = acquisition × durée moyenne. Pour maintenir 200 membres à 2% churn/mois → besoin 4 acquisitions/mois. Utilisé par le bouton 'Auto-calc' du mode cohort.",
 };
 
 export function getAnalysis(label: string): string | undefined {

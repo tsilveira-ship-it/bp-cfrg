@@ -1441,6 +1441,12 @@ function SaturationHeatmapSection({
           </p>
         </aside>
 
+        {/* Saisonnalité couplée — affichage côte-à-côte avec la heatmap : permet de voir
+            qu'un pic acquisition Sept (×1.20) tombe sur des créneaux déjà sous tension, ou
+            qu'un creux été (Août ×0.60) libère naturellement la capacité. Visualisation
+            simple : 12 barres + annotation pic/creux. Source : subs.seasonality. */}
+        <SeasonalityBarsAlongsideHeatmap params={params} />
+
         {/* Heatmap manuelle (poids demande) */}
         <details className="border rounded-md">
           <summary className="cursor-pointer p-3 text-xs font-semibold uppercase tracking-wider hover:bg-muted/30">
@@ -2214,5 +2220,112 @@ function MarginalEconomicsSection({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Saisonnalité acquisition / CA visualisée à côté de la heatmap demande.
+ * Permet à l'utilisateur de voir l'interaction entre :
+ *   - saisonnalité globale (subs.seasonality) : pic Sept, creux Août
+ *   - saisonnalité acquisition différenciée (subs.seasonalityAcquisition) si activée
+ *   - heatmap hebdomadaire (jour × heure) déjà affichée plus haut
+ * Le but : repérer un mois où acquisition × demande hebdo crée une saturation tendue
+ * (ex : Sept ×1.20 acquisition + Lun 19h déjà à 95% = surcharge garantie).
+ */
+function SeasonalityBarsAlongsideHeatmap({ params }: { params: ModelParams }) {
+  const seas = params.subs.seasonality ?? [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+  const seasAcq = params.subs.seasonalityAcquisition;
+  const months = ["Sept", "Oct", "Nov", "Déc", "Janv", "Févr", "Mars", "Avr", "Mai", "Juin", "Juil", "Août"];
+  const maxVal = Math.max(...seas, ...(seasAcq ?? [1]), 1);
+  const minVal = Math.min(...seas, ...(seasAcq ?? [1]), 1);
+
+  const peaks = seas
+    .map((v, i) => ({ v, i }))
+    .filter((x) => x.v >= 1.1)
+    .sort((a, b) => b.v - a.v)
+    .slice(0, 2);
+  const troughs = seas
+    .map((v, i) => ({ v, i }))
+    .filter((x) => x.v <= 0.85)
+    .sort((a, b) => a.v - b.v)
+    .slice(0, 2);
+
+  return (
+    <div className="rounded-md border bg-muted/10 p-3 space-y-2">
+      <div className="flex items-baseline justify-between flex-wrap gap-2">
+        <div className="text-xs font-semibold uppercase tracking-wider text-slate-700">
+          Saisonnalité mensuelle × pression heatmap hebdo
+        </div>
+        <a
+          href="/parameters#seasonality"
+          className="text-[10px] text-[#D32F2F] underline"
+          title="Éditer subs.seasonality"
+        >
+          Éditer sur /parameters
+        </a>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        La heatmap ci-dessus montre la pression <em>hebdomadaire</em> (jour × heure). Cette
+        barre montre la modulation <em>mensuelle</em> qui s'ajoute par-dessus
+        (<code>subs.seasonality</code>). Sur un mois Sept ×1.20, les créneaux déjà saturés
+        de la heatmap dépassent 100% — combine les deux pour voir où tu vas vraiment
+        refuser des membres.
+      </p>
+      <div className="grid grid-cols-12 gap-1 mt-2">
+        {months.map((m, i) => {
+          const v = seas[i] ?? 1;
+          const vAcq = seasAcq?.[i];
+          const heightPct = ((v - minVal) / Math.max(0.01, maxVal - minVal)) * 100;
+          const color = v >= 1.1 ? "bg-red-400" : v <= 0.85 ? "bg-emerald-400" : "bg-slate-400";
+          return (
+            <div key={m} className="flex flex-col items-center gap-0.5">
+              <div className="h-16 w-full flex flex-col justify-end relative">
+                <div
+                  className={`${color} rounded-t-sm transition-all`}
+                  style={{ height: `${Math.max(10, heightPct)}%` }}
+                  title={`${m} : ×${v.toFixed(2)}${vAcq !== undefined ? ` (acquis ×${vAcq.toFixed(2)})` : ""}`}
+                />
+                {vAcq !== undefined && Math.abs(vAcq - v) > 0.05 ? (
+                  <div
+                    className="absolute right-0 top-0 h-0.5 bg-amber-600"
+                    style={{
+                      width: "100%",
+                      top: `${100 - ((vAcq - minVal) / Math.max(0.01, maxVal - minVal)) * 100}%`,
+                    }}
+                    title={`Acquisition spécifique : ×${vAcq.toFixed(2)}`}
+                  />
+                ) : null}
+              </div>
+              <div className="text-[9px] text-muted-foreground">{m}</div>
+              <div className="text-[9px] font-mono text-foreground">
+                {v.toFixed(2)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap gap-3 text-[11px] mt-2">
+        {peaks.length > 0 ? (
+          <div className="text-red-700">
+            <strong>Pics :</strong>{" "}
+            {peaks.map((p) => `${months[p.i]} ×${p.v.toFixed(2)}`).join(", ")} — couplé aux
+            créneaux rouges de la heatmap, attention au refus de membres.
+          </div>
+        ) : null}
+        {troughs.length > 0 ? (
+          <div className="text-emerald-700">
+            <strong>Creux :</strong>{" "}
+            {troughs.map((p) => `${months[p.i]} ×${p.v.toFixed(2)}`).join(", ")} — capacité
+            libérée naturellement, opportunité pour cours spéciaux/teen/masters.
+          </div>
+        ) : null}
+        {seasAcq ? (
+          <div className="text-amber-700">
+            <strong>Acquisition différenciée active</strong> (trait orange) — le cohort
+            applique <code>seasonalityAcquisition</code> séparé du CA global.
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
