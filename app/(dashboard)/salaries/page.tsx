@@ -265,10 +265,9 @@ export default function SalariesPage() {
                           value={cat}
                           onChange={(e) => updateItem(idx, { category: e.target.value as SalaryCategory })}
                         >
-                          <option value="cadre">Cadre</option>
-                          <option value="non-cadre">Non-cadre</option>
-                          <option value="apprenti">Apprenti</option>
-                          <option value="stagiaire">Stagiaire</option>
+                          {(Object.keys(CAT_LABEL) as SalaryCategory[]).map((c) => (
+                            <option key={c} value={c}>{CAT_LABEL[c]}</option>
+                          ))}
                         </select>
                       </div>
                       <div className="col-span-6 md:col-span-2">
@@ -552,10 +551,9 @@ export default function SalariesPage() {
                       value={estCategory}
                       onChange={(e) => setEstCategory(e.target.value as SalaryCategory)}
                     >
-                      <option value="cadre">Cadre</option>
-                      <option value="non-cadre">Non-cadre</option>
-                      <option value="apprenti">Apprenti</option>
-                      <option value="stagiaire">Stagiaire</option>
+                      {(Object.keys(CAT_LABEL) as SalaryCategory[]).map((c) => (
+                        <option key={c} value={c}>{CAT_LABEL[c]}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
