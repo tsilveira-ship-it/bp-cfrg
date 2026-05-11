@@ -1379,6 +1379,68 @@ function SaturationHeatmapSection({
           </div>
         </div>
 
+        {/* Bloc source — calibration heatmap demande sur stats CRM CFRG réelles.
+            Justifie auprès d'investisseurs/banquiers que les poids de demande
+            (matrice `cap.demandHeatmap`) ne sont pas synthétiques mais dérivés
+            de la fréquentation observée du site existant. */}
+        <aside className="rounded-md border-l-4 border-[#D32F2F] bg-[#D32F2F]/5 p-3 space-y-2 text-xs">
+          <div className="flex items-center gap-2 font-semibold uppercase tracking-wider text-[#D32F2F]">
+            <CalendarClock className="h-3.5 w-3.5" />
+            Source des poids de demande — Fréquentation CRM CrossFit Rive Gauche
+          </div>
+          <p className="leading-relaxed text-slate-700">
+            La heatmap de demande utilisée pour projeter la saturation s'appuie sur les <strong>statistiques
+            réelles de fréquentation de la salle</strong>, et non sur un schéma théorique. Les données
+            proviennent du dashboard interne CFRG (<code className="font-mono px-1 bg-white rounded text-[10px]">crossfitrg-web</code>,
+            route <code className="font-mono px-1 bg-white rounded text-[10px]">/dashboard/vue-ensemble</code>),
+            qui agrège deux vues complémentaires synchronisées toutes les 12 h depuis ResaWod (logiciel de
+            réservation utilisé par le club) :
+          </p>
+          <ul className="list-disc pl-5 space-y-1 text-slate-700">
+            <li>
+              <strong>Heatmap 90 jours</strong> (<code className="font-mono text-[10px]">FrequencyHeatmap</code>) —
+              nombre de séances réalisées par créneau (jour × heure), table <code className="font-mono text-[10px]">crm.sessions</code> filtrée
+              sur <code className="font-mono text-[10px]">status = 'attended'</code>. Mesure la <em>fréquence</em>
+              d'ouverture utile d'un créneau.
+            </li>
+            <li>
+              <strong>Heatmap YTD cumulée</strong> (<code className="font-mono text-[10px]">YearlyFrequencyHeatmap</code>) —
+              somme du champ <code className="font-mono text-[10px]">n_attending</code> par créneau depuis le
+              1<sup>er</sup> janvier de l'année en cours. Données ResaWod direct (webhook
+              <code className="font-mono text-[10px] ml-1">list-resawod-sessions-window</code>), séances
+              annulées exclues, fuseau Europe/Paris préservé sans conversion UTC. Mesure la <em>pression
+              effective</em> (un créneau à 12 personnes pèse 12, pas 1).
+            </li>
+          </ul>
+          <p className="leading-relaxed text-slate-700">
+            <strong>Comment ces stats sont prises en compte ici :</strong> les pics observés sur la YTD
+            (typiquement Lun/Mer/Ven 7h, 18h-20h en semaine, samedi 9h-11h en weekend) servent à calibrer
+            les poids relatifs de la matrice <code className="font-mono text-[10px]">demandHeatmap</code>{" "}
+            ci-dessous. Le ratio pic/creux de la salle actuelle (≈ 2.5×) est répercuté tel quel sur la
+            projection BP — c'est ce qui produit les poids 1.0 / 1.5 / 2.0 visibles dans l'éditeur, et non
+            une distribution synthétique uniforme. Un investisseur peut donc retrouver dans
+            <code className="font-mono text-[10px] ml-1">/dashboard/vue-ensemble</code> les chiffres
+            sous-jacents (présences cumulées YTD, séances comptées 90 j) et vérifier la cohérence des
+            poids choisis dans le BP.
+          </p>
+          <p className="leading-relaxed text-slate-500 text-[11px]">
+            <strong>Cycle de rafraîchissement :</strong> 30 jours (cache Next.js Data Cache,
+            tag <code className="font-mono text-[10px]">resawod-sessions-window</code>) — l'analyse
+            structurelle est stable sur un mois, recalculer à chaque visite ne change rien aux poids.
+            Pour ré-importer les poids depuis le CRM mis à jour, utiliser le bouton « Importer heatmap CRM »
+            ci-dessous (V2 — bientôt disponible) ou copier manuellement les chiffres depuis le dashboard
+            puis ajuster la matrice ci-dessous.
+          </p>
+          <p className="leading-relaxed text-slate-500 text-[11px]">
+            <strong>Limites à signaler aux investisseurs :</strong> la heatmap CRM mesure la fréquentation
+            du site <em>existant</em> (offre legacy 220 membres) — le mix produit/horaires de la nouvelle
+            offre CFRG (CrossFit + Hyrox + sandbox, 250-450 membres cible) peut décaler légèrement les
+            pics. Le BP applique un coefficient de saisonnalité (<code className="font-mono text-[10px]">subs.seasonality</code>,
+            cf. /parameters) <em>en plus</em> de cette heatmap pour modéliser les creux été (juil/août) et
+            rentrée (sept/janv), qui ne sont pas visibles dans une vue YTD agrégée.
+          </p>
+        </aside>
+
         {/* Heatmap manuelle (poids demande) */}
         <details className="border rounded-md">
           <summary className="cursor-pointer p-3 text-xs font-semibold uppercase tracking-wider hover:bg-muted/30">
