@@ -21,6 +21,31 @@ export function runHealthCheck(p: ModelParams, result?: ModelResult): HealthIssu
   const T = getAuditThresholds(p);
   const CH = getCapacityHeuristics(p);
 
+  // 1bis. Mix évolutif par FY — somme par FY doit rester ≈ 100% à chaque année où au moins
+  // un tier a un mixPctByFy défini. Sinon, le prix moyen pondéré dérive sans que l'utilisateur
+  // s'en rende compte (le moteur interpole tier par tier).
+  const tiersWithFyMix = p.subs.tiers.filter((t) => t.mixPctByFy && t.mixPctByFy.length > 0);
+  if (tiersWithFyMix.length > 0) {
+    const Y = p.timeline.horizonYears;
+    for (let fy = 0; fy < Y; fy++) {
+      const sumFy = p.subs.tiers.reduce((s, t) => {
+        const arr = t.mixPctByFy;
+        const v = arr && arr.length > fy ? arr[fy] : t.mixPct;
+        return s + v;
+      }, 0);
+      if (Math.abs(sumFy - 1) > 0.01) {
+        issues.push({
+          id: `subs-mix-fy${fy}`,
+          severity: Math.abs(sumFy - 1) > 0.05 ? "critical" : "warning",
+          title: `Mix évolutif FY${fy} ≠ 100%`,
+          message: `Somme mixPctByFy[${fy}] = ${(sumFy * 100).toFixed(1)}% (attendu 100%). Le prix moyen pondéré au FY${fy} est faussé.`,
+          paths: p.subs.tiers.map((_, i) => `subs.tiers.${i}.mixPctByFy.${fy}`),
+          link: PARAMS_LINK,
+        });
+      }
+    }
+  }
+
   // 1. Mix abos = 100%
   const totalMix = p.subs.tiers.reduce((s, t) => s + t.mixPct, 0);
   if (Math.abs(totalMix - 1) > 0.001) {
@@ -252,6 +277,36 @@ export function runHealthCheck(p: ModelParams, result?: ModelResult): HealthIssu
             link: { href: "/capacity", label: "Voir capacité" },
           });
         }
+      }
+    }
+
+    // 11bis. Acquisitions vs capacité physique. Si la trajectoire d'acquisitions vise un
+    // stock fin-horizon qui dépasse la capacité offerte par le planner, alerter — un BP
+    // qui projette 800 membres dans 200 places est "magique". Détecte aussi le cas où le
+    // wizard a calibré des acquisitions trop ambitieuses pour les espaces définis.
+    const cap = p.capacity;
+    if (cap?.areas && cap.areas.length > 0 && cap.weeklySchedule) {
+      const lastFyIdx = result.yearly.length - 1;
+      const scale = cap.scaleByFy?.[lastFyIdx] ?? 1;
+      const classesPerWeekPerArea =
+        5 * cap.weeklySchedule.weekdayClassesPerArea + 2 * cap.weeklySchedule.weekendClassesPerArea;
+      const totalCapacity = cap.areas.reduce((s, a) => s + a.capacity, 0);
+      const slotsOfferedPerMonth = classesPerWeekPerArea * totalCapacity * 4.3 * scale;
+      const lastMonth = result.monthly[result.monthly.length - 1];
+      const lastSubsTotal = (lastMonth?.subsCount ?? 0) + (lastMonth?.legacyCount ?? 0);
+      const demand = lastSubsTotal * (cap.avgSessionsPerMonth ?? 0);
+      if (slotsOfferedPerMonth > 0 && demand > slotsOfferedPerMonth * 1.2) {
+        issues.push({
+          id: "acquisitions-vs-capacity",
+          severity: "critical",
+          title: `Acquisitions projetées dépassent capacité physique (×${(demand / slotsOfferedPerMonth).toFixed(1)})`,
+          message:
+            `Fin d'horizon : ${Math.round(lastSubsTotal)} membres × ${cap.avgSessionsPerMonth} sessions = ` +
+            `${Math.round(demand)} places demandées vs ${Math.round(slotsOfferedPerMonth)} offertes. ` +
+            `Soit augmenter scaleByFy/areas, soit réviser cohort acquisitionGrowthByFy à la baisse.`,
+          hint: "Un BP qui projette plus de membres que la salle ne peut accueillir est immédiatement disqualifié par un VC.",
+          link: { href: "/capacity-planner", label: "Ajuster capacité" },
+        });
       }
     }
 

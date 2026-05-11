@@ -161,6 +161,12 @@ function monthlySubsCountNetTarget(p: ModelParams, horizonMonths: number): numbe
  * Niveau 3 — évalue retention(t) pour t = nb mois depuis acquisition.
  * Si `retentionCurve` défini, lookup direct + extrapolation linéaire au-delà.
  * Sinon, formule exponentielle (1 - churn)^t.
+ *
+ * Pour l'extrapolation au-delà du dernier point de la courbe, la pente est clampée à 0
+ * pour préserver la monotonie décroissante — une courbe empirique bruitée peut avoir
+ * une pente positive en fin (artefact statistique) qui ferait remonter artificiellement
+ * la rétention. On préfère une rétention plate (steady-state) à une rétention qui croît
+ * avec l'ancienneté.
  */
 export function evalRetention(
   t: number,
@@ -169,12 +175,80 @@ export function evalRetention(
 ): number {
   if (!curve || curve.length === 0) return Math.pow(1 - monthlyChurnPct, t);
   if (t < curve.length) return Math.max(0, curve[t]);
-  // Extrapolation : pente moyenne des 6 derniers points (ou disponible).
   const last = curve[curve.length - 1];
   const lookback = Math.min(6, curve.length - 1);
   if (lookback <= 0) return Math.max(0, last);
-  const slope = (curve[curve.length - 1] - curve[curve.length - 1 - lookback]) / lookback;
+  const rawSlope = (curve[curve.length - 1] - curve[curve.length - 1 - lookback]) / lookback;
+  const slope = Math.min(0, rawSlope);
   return Math.max(0, last + slope * (t - (curve.length - 1)));
+}
+
+/**
+ * Niveau 6 — espérance de rétention en mois pour un cohort, calculée comme intégrale
+ * discrète Σ_{t=0..} retention(t). Utilisée par les métriques LTV (LTV = prix × E[retention]).
+ *
+ * - Si `curve` actif : somme la courbe + extrapolation tail (pente clampée ≤ 0) jusqu'à
+ *   épuisement (< 0.1%) ou plafond `tailCapMonths`.
+ * - Sinon : formule fermée loi géométrique = 1/churn.
+ *
+ * Avant ce helper, le code calculait LTV via `1/churn` même quand la courbe était active,
+ * ce qui ignorait le shape (newbie drop ≠ exp). Désormais cohérent.
+ */
+export function expectedRetentionMonths(
+  monthlyChurnPct: number,
+  curve?: number[],
+  tailCapMonths = 60
+): number {
+  if (curve && curve.length > 0) {
+    let sum = 0;
+    for (let t = 0; t < curve.length; t++) sum += Math.max(0, curve[t]);
+    // Tail extrapolation (pente clampée ≤ 0)
+    if (curve.length < tailCapMonths) {
+      const last = curve[curve.length - 1];
+      const lookback = Math.min(6, curve.length - 1);
+      const rawSlope =
+        lookback > 0
+          ? (curve[curve.length - 1] - curve[curve.length - 1 - lookback]) / lookback
+          : 0;
+      const slope = Math.min(0, rawSlope);
+      let v = last;
+      for (let t = curve.length; t < tailCapMonths; t++) {
+        v = Math.max(0, v + slope);
+        if (v < 0.001) break;
+        sum += v;
+      }
+    }
+    return sum;
+  }
+  if (monthlyChurnPct <= 0) return tailCapMonths;
+  return 1 / monthlyChurnPct;
+}
+
+/**
+ * Niveau 6 — survie d'une cohorte entrée au mois k, observée au mois m,
+ * tenant compte d'une saisonnalité du churn `seasonalityChurn[]` (12 multiplicateurs
+ * Sept..Août). Si non défini ou churn=0, retombe sur (1-churn)^(m-k).
+ *
+ * Math : S(k→m) = Π_{u=k+1..m} (1 - churn × seasFactor[u % 12]).
+ * En pré-calculant S[m] = Π_{u=0..m-1} (1 - c × seas[u%12]) on obtient
+ * survival(k, m) = S[m] / S[k] avec compute O(H) au lieu de O(H²).
+ *
+ * Note : si `retentionCurve` est aussi actif, la courbe override entièrement (la courbe
+ * est empirique, mieux que la modulation synthétique seasChurn). Pas de combinaison.
+ */
+export function buildSeasonalSurvival(
+  monthlyChurnPct: number,
+  seasonalityChurn: number[] | undefined,
+  horizonMonths: number
+): number[] | null {
+  if (!seasonalityChurn || seasonalityChurn.length !== 12 || monthlyChurnPct <= 0) return null;
+  const S = new Array<number>(horizonMonths + 1).fill(1);
+  for (let u = 0; u < horizonMonths; u++) {
+    const factor = seasonalityChurn[u % 12] ?? 1;
+    const eff = Math.max(0, Math.min(1, monthlyChurnPct * factor));
+    S[u + 1] = S[u] * (1 - eff);
+  }
+  return S;
 }
 
 /**
@@ -231,13 +305,28 @@ function monthlySubsCountCohort(p: ModelParams, horizonMonths: number): number[]
     acq[m] = acq[m] * seasonFactor;
   }
 
-  // 2. Build count[m] via cohort sum (utilise retention curve si défini, sinon exponentielle)
+  // 2. Build count[m] via cohort sum.
+  //
+  // Priorité de la rétention :
+  //   1. retentionCurve si défini (empirique > synthétique)
+  //   2. seasonalityChurn si défini + churn>0 (survival saisonnier S[m]/S[k])
+  //   3. Sinon exponentielle (1-churn)^t (cas par défaut)
   const curve = cm.retentionCurve;
+  const seasChurn = p.subs.seasonalityChurn;
+  const survival = curve && curve.length > 0
+    ? null
+    : buildSeasonalSurvival(churn, seasChurn, horizonMonths);
   const out = new Array<number>(horizonMonths).fill(0);
   for (let m = 0; m < horizonMonths; m++) {
     let total = 0;
     for (let k = 0; k <= m; k++) {
-      total += acq[k] * evalRetention(m - k, churn, curve);
+      let r: number;
+      if (survival) {
+        r = survival[k] > 0 ? survival[m] / survival[k] : 0;
+      } else {
+        r = evalRetention(m - k, churn, curve);
+      }
+      total += acq[k] * r;
     }
     out[m] = total;
   }
@@ -405,11 +494,18 @@ export function monthlySubsCountByTier(
     const tierChurn = tier.monthlyChurnPct ?? fallbackChurn;
     const acqMix = tier.acquisitionMixPct ?? tier.mixPct;
     const counts = new Array<number>(horizonMonths).fill(0);
+    // Pour chaque tier, on calcule sa propre survival saisonnier si seasonalityChurn défini.
+    // Le churn-par-tier prime sur le global mais réutilise la même modulation calendaire.
+    const seasChurn = p.subs.seasonalityChurn;
+    const tierSurvival = buildSeasonalSurvival(tierChurn, seasChurn, horizonMonths);
     if (useCohort) {
       for (let m = 0; m < horizonMonths; m++) {
         let sum = 0;
         for (let k = 0; k <= m; k++) {
-          sum += acq[k] * acqMix * Math.pow(1 - tierChurn, m - k);
+          const r = tierSurvival
+            ? (tierSurvival[k] > 0 ? tierSurvival[m] / tierSurvival[k] : 0)
+            : Math.pow(1 - tierChurn, m - k);
+          sum += acq[k] * acqMix * r;
         }
         counts[m] = sum;
       }
@@ -685,16 +781,24 @@ export function computeModel(p: ModelParams): ModelResult {
   let subsCount: number[];
   let subsRevenue: number[];
   if (useCohort && hasMigrants) {
-    // Inject migrants comme acquisitions supplémentaires dans le cohort sum
+    // Inject migrants comme acquisitions supplémentaires dans le cohort sum.
+    // Note : un migrant legacy a déjà X mois d'ancienneté, mais on l'injecte comme
+    // cohorte fraîche (M0) faute d'info sur sa tenure d'origine. Hypothèse optimiste
+    // (rétention pleine) — à raffiner si crm.customers expose tenure.
     const baseAcq = monthlyAcquisitions(p, H);
     const totalAcq = baseAcq.map((v, i) => v + legacy.migrants[i]);
     const churn = p.subs.monthlyChurnPct ?? 0;
     const curve = p.subs.cohortModel?.retentionCurve;
+    const seasChurn = p.subs.seasonalityChurn;
+    const survival = curve && curve.length > 0 ? null : buildSeasonalSurvival(churn, seasChurn, H);
     subsCount = new Array<number>(H).fill(0);
     for (let m = 0; m < H; m++) {
       let total = 0;
       for (let k = 0; k <= m; k++) {
-        total += totalAcq[k] * evalRetention(m - k, churn, curve);
+        const r = survival
+          ? (survival[k] > 0 ? survival[m] / survival[k] : 0)
+          : evalRetention(m - k, churn, curve);
+        total += totalAcq[k] * r;
       }
       subsCount[m] = total;
     }

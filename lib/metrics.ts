@@ -1,6 +1,10 @@
 import type { ModelResult, ModelParams } from "./model/types";
 import { getInvestorAssumptions } from "./model/defaults";
-import { monthlyAcquisitions } from "./model/compute";
+import {
+  monthlyAcquisitions,
+  expectedRetentionMonths,
+  weightedChannelCac,
+} from "./model/compute";
 
 // IRR via Newton-Raphson on monthly cashflows
 export function irrMonthly(cashflows: number[], guess = 0.01): number | null {
@@ -148,9 +152,18 @@ export function ltvByTier(params: ModelParams, fallbackRetention?: number): Tier
   const fallbackChurn = params.subs.monthlyChurnPct ?? 0;
   const retentionFallback =
     fallbackRetention ?? getInvestorAssumptions(params).retentionMonthsFallback!;
+  // Si retentionCurve actif, la rétention par tier suit la même courbe empirique
+  // (le tier-churn override est ignoré car la courbe est globale). Sinon, retombe
+  // sur tier.monthlyChurnPct ?? global churn, avec fallback constant.
+  const curve = params.subs.cohortModel?.retentionCurve;
   return params.subs.tiers.map((t) => {
     const churn = t.monthlyChurnPct ?? fallbackChurn;
-    const retention = churn > 0 ? 1 / churn : retentionFallback;
+    const retention =
+      curve && curve.length > 0
+        ? expectedRetentionMonths(churn, curve)
+        : churn > 0
+        ? 1 / churn
+        : retentionFallback;
     return {
       tierId: t.id,
       tierName: t.name,
@@ -180,7 +193,16 @@ export function ltvCac(
   const churn = params.subs.monthlyChurnPct ?? 0;
   const fallbackRetention =
     avgRetentionMonthsOverride ?? getInvestorAssumptions(params).retentionMonthsFallback!;
-  const avgRetentionMonths = churn > 0 ? 1 / churn : fallbackRetention;
+  // Si retentionCurve actif, on intègre la courbe (avec extrapolation tail clampée).
+  // Sinon formule fermée 1/churn. Fix du bug où LTV utilisait toujours 1/churn même
+  // avec une courbe non-exponentielle (newbie drop sous-estimé, fat-tail sur-estimé).
+  const curve = params.subs.cohortModel?.retentionCurve;
+  const avgRetentionMonths =
+    curve && curve.length > 0
+      ? expectedRetentionMonths(churn, curve)
+      : churn > 0
+      ? 1 / churn
+      : fallbackRetention;
   const ltv = avgPriceTTC * avgRetentionMonths;
 
   const fy1 = result.yearly[0];
@@ -189,13 +211,20 @@ export function ltvCac(
         .slice(0, 12)
         .reduce((s, v) => s + v, 0)
     : 0;
-  const cac = acquisitionsY1 > 0 ? fy1.marketing / acquisitionsY1 : 0;
+  // CAC : si l'utilisateur a défini des canaux d'acquisition (acquisitionChannels),
+  // on utilise leur CAC pondéré (source : mix par canal × cacEur). Sinon retombe sur
+  // le CAC implicite marketing budget Y1 / acquisitions Y1.
+  const channelCac = weightedChannelCac(params);
+  const implicitCac = acquisitionsY1 > 0 ? fy1.marketing / acquisitionsY1 : 0;
+  const cac = channelCac ?? implicitCac;
+  const cacSource: "channels" | "implicit" = channelCac !== null ? "channels" : "implicit";
 
   return {
     avgPriceTTC,
     avgRetentionMonths,
     ltv,
     cac,
+    cacSource,
     ratio: cac > 0 ? ltv / cac : Infinity,
     acquisitionsY1,
   };
