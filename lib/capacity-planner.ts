@@ -6,6 +6,7 @@ import type {
   Persona,
   WeeklySchedule,
 } from "./model/types";
+import { SATURATION_THRESHOLDS } from "./thresholds";
 
 const WEEKS_PER_MONTH = 4.3;
 
@@ -284,7 +285,7 @@ export type SaturationRecommendation = {
 
 export function recommendCapacityStrategy(
   heat: ReturnType<typeof computeSaturationHeatmap>,
-  targetSat = 0.75
+  targetSat: number = SATURATION_THRESHOLDS.defaultTarget
 ): SaturationRecommendation {
   const hotCells = heat.cells
     .filter((c) => c.weight > 0 && c.saturation > 1)
@@ -307,7 +308,7 @@ export function recommendCapacityStrategy(
   const totalActiveCells = heat.cells.filter((c) => c.weight > 0).length;
   const peakRatio = totalActiveCells > 0 ? peakCells / totalActiveCells : 0;
 
-  if (heat.maxSaturation > 1.5) {
+  if (heat.maxSaturation > SATURATION_THRESHOLDS.overflow) {
     return {
       type: "overflow",
       message: `Saturation pic ${(heat.maxSaturation * 100).toFixed(0)}% — scale global ${suggestedScaleGlobal.toFixed(2)} requis OU doubler les ${peakCells} créneaux pics.`,
@@ -317,7 +318,7 @@ export function recommendCapacityStrategy(
     };
   }
 
-  if (peakRatio < 0.4) {
+  if (peakRatio < SATURATION_THRESHOLDS.peakRatioThreshold) {
     return {
       type: "double-peaks",
       message: `${peakCells} créneaux/${totalActiveCells} en tension. Plutôt que scale global ${suggestedScaleGlobal.toFixed(2)}, double juste les pics → économie coût coach.`,
@@ -401,7 +402,7 @@ export function autoScheduleParallelMatrix(
   demandMatrix: number[][],
   areas: GymArea[],
   scale: number,
-  targetSat = 0.75
+  targetSat: number = SATURATION_THRESHOLDS.defaultTarget
 ): number[][] {
   const out: number[][] = Array.from({ length: 7 }, () =>
     new Array(HEATMAP_HOURS.length).fill(0)

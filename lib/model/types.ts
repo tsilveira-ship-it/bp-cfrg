@@ -203,7 +203,7 @@ export type SubscriptionTier = {
   acquisitionMixPct?: number;
 };
 
-export type SalaryCategory = "cadre" | "non-cadre" | "apprenti" | "stagiaire";
+export type SalaryCategory = "cadre" | "non-cadre" | "tns" | "apprenti" | "stagiaire";
 
 export type SalaryItem = {
   id: string;
@@ -231,6 +231,9 @@ export type ChargesProfile = {
 export const DEFAULT_CHARGES: ChargesProfile[] = [
   { category: "cadre", patroPct: 0.42, salaryPct: 0.22 },
   { category: "non-cadre", patroPct: 0.40, salaryPct: 0.22 },
+  // TNS (Travailleur Non Salarié) — gérants majoritaires SARL / EURL / SAS gérant SSI.
+  // Pas de bulletin de paie : charges URSSAF dirigeants ~22% de la rémunération brute.
+  { category: "tns", patroPct: 0.22, salaryPct: 0 },
   { category: "apprenti", patroPct: 0.10, salaryPct: 0 },
   { category: "stagiaire", patroPct: 0, salaryPct: 0 },
 ];
@@ -249,8 +252,13 @@ export type FreelancePool = {
 export const WEEKS_PER_MONTH = 4.3;
 
 export function getPatroPct(item: SalaryItem, profiles: ChargesProfile[] | undefined, fallback: number): number {
-  if (!item.category || !profiles) return fallback;
-  const p = profiles.find((pr) => pr.category === item.category);
+  // Si une category est définie sur le poste, on cherche d'abord dans les profils
+  // explicites (params.salaries.chargesProfiles), puis dans DEFAULT_CHARGES. Cela permet
+  // qu'un poste catégorisé voie ses charges patronales appliquées sans obliger l'utilisateur
+  // à recopier l'intégralité de DEFAULT_CHARGES dans son scénario.
+  if (!item.category) return fallback;
+  const list = profiles ?? DEFAULT_CHARGES;
+  const p = list.find((pr) => pr.category === item.category);
   return p?.patroPct ?? fallback;
 }
 

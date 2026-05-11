@@ -49,6 +49,8 @@ export const SECTOR_BENCHMARKS = {
   isRateFR: { low: 0.15, high: 0.25, source: "Code général des impôts FR" },
   // Multiple EBITDA fitness
   multipleEbitdaFitness: { low: 4, high: 6, source: "M&A studies: Pitchbook fitness 2023" },
+  // Marketing en % du CA, secteur fitness club
+  marketingPctOfRevenueFitness: { low: 0.015, high: 0.03, source: "IHRSA Industry Profile fitness club" },
 };
 
 export type SectorBenchmarkKey = keyof typeof SECTOR_BENCHMARKS;

@@ -48,6 +48,7 @@ import {
 const CAT_LABEL: Record<SalaryCategory, string> = {
   cadre: "Cadre",
   "non-cadre": "Non-cadre",
+  tns: "TNS (gérant majoritaire)",
   apprenti: "Apprenti",
   stagiaire: "Stagiaire",
 };

@@ -57,6 +57,7 @@ import {
   type CdiHypothesis,
   type FreelanceHypothesis,
 } from "@/lib/capacity-planner";
+import { SATURATION_THRESHOLDS } from "@/lib/thresholds";
 import type {
   ClassDiscipline,
   CoachAllocation,
@@ -1188,7 +1189,7 @@ function SaturationHeatmapSection({
   const cap = params.capacity;
   const matrix = cap?.demandHeatmap ?? defaultDemandHeatmap();
   const parallelMatrix = cap?.parallelByCellMatrix;
-  const targetSat = cap?.targetSaturationPct ?? 0.75;
+  const targetSat = cap?.targetSaturationPct ?? SATURATION_THRESHOLDS.defaultTarget;
   const isDefault = !cap?.demandHeatmap;
   const isParallelDefault = !cap?.parallelByCellMatrix;
 

@@ -34,6 +34,7 @@ import {
   marginalClassEconomics,
   recommendCapacityStrategy,
 } from "@/lib/capacity-planner";
+import { SATURATION_THRESHOLDS } from "@/lib/thresholds";
 
 export default function CapacityPage() {
   const params = useModelStore((s) => s.params);
@@ -47,7 +48,7 @@ export default function CapacityPage() {
   const scaleByFy = cap?.scaleByFy ?? new Array(horizonYears).fill(1);
   const demandMatrix = cap?.demandHeatmap ?? defaultDemandHeatmap();
   const parallelMatrix = cap?.parallelByCellMatrix;
-  const targetSat = cap?.targetSaturationPct ?? 0.75;
+  const targetSat = cap?.targetSaturationPct ?? SATURATION_THRESHOLDS.defaultTarget;
   const personas = cap?.personas ?? [];
   const disciplineMatrix = cap?.disciplineByCellMatrix;
   const sbt = cap?.sessionsByTenure;
