@@ -377,7 +377,7 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <Label className="text-xs">Churn mensuel (% nouveaux abos)</Label>
+            <Label className="text-xs">Churn mensuel global</Label>
             <div className="relative">
               <Input
                 type="number"
@@ -391,7 +391,9 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
             </div>
             <p className="text-[10px] text-muted-foreground mt-1">
-              0% = pas de churn (rétention parfaite). 2-3% mensuel = standard fitness.
+              <strong>Source unique du churn.</strong> Appliqué à tous les tiers sans override.
+              0% = rétention parfaite. 2-3%/mois = standard fitness. Override par tier dispo dans
+              la section <em>Tiers d'abonnement</em> (bouton « + Override »).
             </p>
             <div className="flex flex-wrap gap-1 mt-1.5">
               <a

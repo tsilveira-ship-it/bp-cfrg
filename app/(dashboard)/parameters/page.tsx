@@ -251,41 +251,65 @@ export default function ParametersPage() {
                         />
                       </div>
                       <div className="md:col-span-3">
-                        <Label className="text-xs">
-                          Churn / mois (%){" "}
-                          {!tierChurnDefined ? (
-                            <span className="text-[10px] text-muted-foreground">(global)</span>
-                          ) : null}
-                        </Label>
-                        <div className="flex items-center gap-2">
-                          <div className="relative flex-1">
-                            <Input
-                              type="number"
-                              step="0.1"
-                              value={(tierChurn * 100).toFixed(2)}
-                              onChange={(e) =>
+                        {/* Churn par tier : 2 états visuels distincts pour éviter la
+                            confusion historique (le champ semblait modifier le global).
+                            - Sans override : badge read-only "Hérite global X%" + bouton "Override".
+                              Aucun input visible → impossible de croire qu'on édite le global.
+                            - Avec override : input rouge éditable + × pour reset au global. */}
+                        <Label className="text-xs">Churn / mois</Label>
+                        {!tierChurnDefined ? (
+                          <div className="flex items-center gap-2 mt-1">
+                            <div
+                              className="flex-1 h-9 px-3 rounded-md border bg-muted/30 text-xs flex items-center font-mono text-muted-foreground"
+                              title={`Hérite du churn global. Source : section Saisonnalité & rétention.`}
+                            >
+                              {(tierChurn * 100).toFixed(2)}% <span className="ml-1 text-[10px]">(hérité global)</span>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-9 px-2 text-[10px]"
+                              title="Définir un churn différent pour ce tier (override). Le global reste appliqué aux autres tiers."
+                              onClick={() =>
                                 setParams((p) => ({
                                   ...p,
                                   subs: {
                                     ...p.subs,
                                     tiers: p.subs.tiers.map((t, i) =>
-                                      i === idx ? { ...t, monthlyChurnPct: (parseFloat(e.target.value) || 0) / 100 } : t
+                                      i === idx ? { ...t, monthlyChurnPct: tierChurn } : t
                                     ),
                                   },
                                 }))
                               }
-                              className="pr-7"
-                              title={
-                                tierChurnDefined
-                                  ? `Override tier — rétention ${retentionMonths ? retentionMonths.toFixed(0) + " mois" : "∞"}`
-                                  : `Hérité du churn global (${(fallbackChurn * 100).toFixed(2)}%)`
-                              }
-                            />
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                              %
-                            </span>
+                            >
+                              + Override
+                            </Button>
                           </div>
-                          {tierChurnDefined ? (
+                        ) : (
+                          <div className="flex items-center gap-2 mt-1">
+                            <div className="relative flex-1">
+                              <Input
+                                type="number"
+                                step="0.1"
+                                value={(tierChurn * 100).toFixed(2)}
+                                onChange={(e) =>
+                                  setParams((p) => ({
+                                    ...p,
+                                    subs: {
+                                      ...p.subs,
+                                      tiers: p.subs.tiers.map((t, i) =>
+                                        i === idx ? { ...t, monthlyChurnPct: (parseFloat(e.target.value) || 0) / 100 } : t
+                                      ),
+                                    },
+                                  }))
+                                }
+                                className="pr-7 border-[#D32F2F]/50 bg-[#D32F2F]/5"
+                                title={`Override tier actif (différent du global ${(fallbackChurn * 100).toFixed(2)}%). Rétention ~${retentionMonths ? retentionMonths.toFixed(0) : "∞"} mois.`}
+                              />
+                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                                %
+                              </span>
+                            </div>
                             <Button
                               variant="ghost"
                               size="sm"
@@ -307,11 +331,12 @@ export default function ParametersPage() {
                             >
                               ×
                             </Button>
-                          ) : null}
-                        </div>
+                          </div>
+                        )}
                         {retentionMonths ? (
                           <p className="text-[10px] text-muted-foreground mt-0.5">
                             Rétention ~{retentionMonths.toFixed(0)} mois
+                            {tierChurnDefined ? " (override actif)" : ""}
                           </p>
                         ) : (
                           <p className="text-[10px] text-muted-foreground mt-0.5">Pas de churn</p>
