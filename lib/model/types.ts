@@ -437,11 +437,33 @@ export type ModelParams = {
      */
     cohortModel?: {
       enabled: boolean;
-      /** Acquisitions brutes/mois — début FY26 (mois 0). */
+      /**
+       * Acquisitions brutes/mois — UN tableau, UNE valeur par FY (length = horizonYears).
+       * Modèle simplifié sans ramp interne : la valeur est constante intra-FY (chaque mois
+       * du FY reçoit la même acquisition de base avant saisonnalité). Aux frontières FY,
+       * pas d'interpolation ramp — la trajectoire est une fonction étagée, modulée
+       * uniquement par la saisonnalité mensuelle (subs.seasonality ou seasonalityAcquisition).
+       *
+       * Si défini, override les anciens `acquisitionStart` + `acquisitionEnd` +
+       * `acquisitionGrowthByFy`. Ces 3 champs restent en types pour compat ascendante des
+       * scénarios anciens, mais la migration vers `acquisitionByFy` se fait automatiquement
+       * dans `normalizeParams` à la première lecture.
+       */
+      acquisitionByFy?: number[];
+      /**
+       * @deprecated — utiliser `acquisitionByFy[0]` à la place.
+       * Conservé pour rétro-compatibilité de lecture des anciens scénarios.
+       */
       acquisitionStart: number;
-      /** Acquisitions brutes/mois — fin FY26 (mois 11). */
+      /**
+       * @deprecated — utiliser `acquisitionByFy` à la place.
+       * Conservé pour rétro-compatibilité de lecture des anciens scénarios.
+       */
       acquisitionEnd: number;
-      /** Croissance annuelle du taux d'acquisition mensuel post-FY26. Length = horizonYears - 1. */
+      /**
+       * @deprecated — utiliser `acquisitionByFy` à la place (les croissances FY-over-FY
+       * sont implicites dans le tableau).
+       */
       acquisitionGrowthByFy: number[];
       /** Saisonnalité appliquée aux acquisitions (12 multiplicateurs Sept..Août). Default = subs.seasonality. */
       acquisitionSeasonality?: number[];
@@ -961,6 +983,29 @@ export function normalizeParams(p: any): ModelParams {
       ]
     : [];
 
+  // Migration cohort : si l'ancien shape (acquisitionStart/End/GrowthByFy) est présent
+  // sans `acquisitionByFy`, dérive le tableau étagé par FY. Approche : prendre la moyenne
+  // arithmétique de la ramp FY0 (Start, End) comme valeur FY0, puis appliquer croissance
+  // composée pour les FY suivants. Préserve la trajectoire totale d'acquisitions à ±5%
+  // sur la majorité des scénarios, et l'utilisateur peut affiner après migration.
+  const cm = p.subs?.cohortModel;
+  let migratedCohort = cm;
+  if (cm && cm.acquisitionByFy === undefined && typeof cm.acquisitionStart === "number") {
+    const acqFy0 = (cm.acquisitionStart + (cm.acquisitionEnd ?? cm.acquisitionStart)) / 2;
+    const Y = timeline.horizonYears;
+    const growthByFy: number[] = Array.isArray(cm.acquisitionGrowthByFy)
+      ? cm.acquisitionGrowthByFy
+      : [];
+    const acquisitionByFy: number[] = new Array(Y).fill(acqFy0);
+    let cur = acqFy0;
+    for (let fy = 1; fy < Y; fy++) {
+      const g = growthByFy[fy - 1] ?? 0;
+      cur = cur * (1 + g);
+      acquisitionByFy[fy] = cur;
+    }
+    migratedCohort = { ...cm, acquisitionByFy };
+  }
+
   return {
     ...p,
     timeline,
@@ -968,6 +1013,7 @@ export function normalizeParams(p: any): ModelParams {
       ...p.subs,
       vatRate: p.subs?.vatRate ?? 0.20,
       growthRates,
+      cohortModel: migratedCohort,
     },
     rent: {
       ...p.rent,

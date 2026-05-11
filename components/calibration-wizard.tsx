@@ -122,11 +122,19 @@ export function CalibrationWizard() {
           },
           cohortModel: {
             enabled: true,
+            // Shape simplifié : 1 valeur d'acquisition/mois par FY, plus de ramp interne.
+            // FY0 = bilans × conversion. FY1+ croissance composée 15%/an par défaut.
+            // Utilisateur affine ensuite via /parameters (tableau acquisitionByFy).
+            acquisitionByFy: (() => {
+              const Y = p.timeline.horizonYears;
+              const base = Math.max(1, bilansPerMonth * (conversionPct / 100));
+              const arr = new Array<number>(Y).fill(base);
+              for (let i = 1; i < Y; i++) arr[i] = arr[i - 1] * 1.15;
+              return arr.map((v) => Math.round(v * 10) / 10);
+            })(),
+            // Champs deprecated conservés en types pour rétro-compat lecture
             acquisitionStart: Math.max(1, bilansPerMonth * (conversionPct / 100)),
-            acquisitionEnd: Math.max(
-              2,
-              bilansPerMonth * (conversionPct / 100) * 2.5
-            ),
+            acquisitionEnd: Math.max(1, bilansPerMonth * (conversionPct / 100)),
             acquisitionGrowthByFy:
               p.subs.cohortModel?.acquisitionGrowthByFy ??
               new Array(growthLen).fill(0.15),

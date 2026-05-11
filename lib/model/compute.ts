@@ -260,6 +260,56 @@ export function buildSeasonalSurvival(
  * - FY27+ croissance via acquisitionGrowthByFy[]
  * - Saisonnalité appliquée aux acquisitions (pas au stock)
  */
+/**
+ * Construit le tableau d'acquisitions mensuelles brutes (avant saisonnalité) en mode cohort.
+ *
+ * Priorité :
+ *   1. `cohortModel.acquisitionByFy[]` (simplifié — valeur constante intra-FY, recommandé)
+ *   2. Fallback ramp legacy : `acquisitionStart` → `acquisitionEnd` interpolé sur FY0,
+ *      puis `acquisitionGrowthByFy[]` pour les FY suivants (interpolation linéaire intra-FY)
+ *
+ * Le mode 1 supprime la notion de ramp intra-FY — on accepte que la valeur varie par
+ * paliers FY à FY, modulée seulement par la saisonnalité mensuelle. Plus simple à
+ * calibrer et à expliquer à un investisseur, et la saisonnalité (Sept ×1.20 / Août ×0.60)
+ * fait déjà le travail de "monter en charge" naturellement.
+ */
+function buildBaseAcquisitions(p: ModelParams, horizonMonths: number): number[] {
+  const cm = p.subs.cohortModel;
+  if (!cm) return new Array(horizonMonths).fill(0);
+  const acq = new Array<number>(horizonMonths).fill(0);
+  const horizonYears = Math.floor(horizonMonths / FY_LEN);
+
+  if (Array.isArray(cm.acquisitionByFy) && cm.acquisitionByFy.length > 0) {
+    // Mode simplifié : 1 valeur par FY, constante intra-FY.
+    for (let fy = 0; fy < horizonYears; fy++) {
+      const v = cm.acquisitionByFy[fy] ?? cm.acquisitionByFy[cm.acquisitionByFy.length - 1] ?? 0;
+      for (let i = 0; i < FY_LEN; i++) {
+        const m = fy * FY_LEN + i;
+        if (m < horizonMonths) acq[m] = v;
+      }
+    }
+    return acq;
+  }
+
+  // Fallback ramp legacy (rétro-compat scénarios anciens sans acquisitionByFy)
+  const a0 = cm.acquisitionStart;
+  const a1 = cm.acquisitionEnd;
+  for (let m = 0; m < FY_LEN && m < horizonMonths; m++) {
+    acq[m] = a0 + ((a1 - a0) * m) / (FY_LEN - 1);
+  }
+  let prevEndAcq = a1;
+  for (let fy = 1; fy < horizonYears; fy++) {
+    const growth = cm.acquisitionGrowthByFy[fy - 1] ?? 0;
+    const start = prevEndAcq;
+    const end = prevEndAcq * (1 + growth);
+    for (let i = 0; i < FY_LEN; i++) {
+      acq[fy * FY_LEN + i] = start + ((end - start) * i) / (FY_LEN - 1);
+    }
+    prevEndAcq = end;
+  }
+  return acq;
+}
+
 function monthlySubsCountCohort(p: ModelParams, horizonMonths: number): number[] {
   const cm = p.subs.cohortModel;
   if (!cm || !cm.enabled) {
@@ -277,26 +327,8 @@ function monthlySubsCountCohort(p: ModelParams, horizonMonths: number): number[]
       ? p.subs.seasonality
       : null);
 
-  // 1. Build acquisitions[m]
-  const acq = new Array<number>(horizonMonths).fill(0);
-  const a0 = cm.acquisitionStart;
-  const a1 = cm.acquisitionEnd;
-
-  // FY26 ramp linéaire des acquisitions mensuelles
-  for (let m = 0; m < FY_LEN && m < horizonMonths; m++) {
-    acq[m] = a0 + ((a1 - a0) * m) / (FY_LEN - 1);
-  }
-  let prevEndAcq = a1;
-  const horizonYears = Math.floor(horizonMonths / FY_LEN);
-  for (let fy = 1; fy < horizonYears; fy++) {
-    const growth = cm.acquisitionGrowthByFy[fy - 1] ?? 0;
-    const start = prevEndAcq;
-    const end = prevEndAcq * (1 + growth);
-    for (let i = 0; i < FY_LEN; i++) {
-      acq[fy * FY_LEN + i] = start + ((end - start) * i) / (FY_LEN - 1);
-    }
-    prevEndAcq = end;
-  }
+  // 1. Build acquisitions[m] depuis acquisitionByFy (simplifié) ou ramp legacy
+  const acq = buildBaseAcquisitions(p, horizonMonths);
 
   // Saisonnalité acquisitions (pas appliquée au stock)
   for (let m = 0; m < horizonMonths; m++) {
@@ -416,23 +448,7 @@ export function monthlyAcquisitions(p: ModelParams, horizonMonths: number): numb
         : p.subs.seasonality && p.subs.seasonality.length === 12
         ? p.subs.seasonality
         : null);
-    const acq = new Array<number>(horizonMonths).fill(0);
-    const a0 = cm.acquisitionStart;
-    const a1 = cm.acquisitionEnd;
-    for (let m = 0; m < FY_LEN && m < horizonMonths; m++) {
-      acq[m] = a0 + ((a1 - a0) * m) / (FY_LEN - 1);
-    }
-    let prevEndAcq = a1;
-    const horizonYears = Math.floor(horizonMonths / FY_LEN);
-    for (let fy = 1; fy < horizonYears; fy++) {
-      const growth = cm.acquisitionGrowthByFy[fy - 1] ?? 0;
-      const start = prevEndAcq;
-      const end = prevEndAcq * (1 + growth);
-      for (let i = 0; i < FY_LEN; i++) {
-        acq[fy * FY_LEN + i] = start + ((end - start) * i) / (FY_LEN - 1);
-      }
-      prevEndAcq = end;
-    }
+    const acq = buildBaseAcquisitions(p, horizonMonths);
     for (let m = 0; m < horizonMonths; m++) {
       const moy = m % FY_LEN;
       const seasonFactor = acquisitionSeasonality ? acquisitionSeasonality[moy] : 1;
