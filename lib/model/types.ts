@@ -232,8 +232,13 @@ export const DEFAULT_CHARGES: ChargesProfile[] = [
   { category: "cadre", patroPct: 0.42, salaryPct: 0.22 },
   { category: "non-cadre", patroPct: 0.40, salaryPct: 0.22 },
   // TNS (Travailleur Non Salarié) — gérants majoritaires SARL / EURL / SAS gérant SSI.
-  // Pas de bulletin de paie : charges URSSAF dirigeants ~22% de la rémunération brute.
-  { category: "tns", patroPct: 0.22, salaryPct: 0 },
+  // Charges sociales SSI ~45% de la rémunération brute du dirigeant (assiette = revenu
+  // professionnel) : maladie ~6.5%, retraite base ~17.75%, retraite complémentaire ~7%,
+  // invalidité-décès ~1.3%, allocations familiales ~3.1%, CSG/CRDS ~9.7%, formation 0.25%.
+  // Pas de chômage (TNS non éligibles ARE), pas de prévoyance obligatoire. Plus léger
+  // qu'un cadre/non-cadre en charges totales (patro + sal ≈ 64%), mais sans filet social.
+  // Pas de bulletin de paie → salaryPct = 0 (pas de cotisations « salariales » séparées).
+  { category: "tns", patroPct: 0.45, salaryPct: 0 },
   { category: "apprenti", patroPct: 0.10, salaryPct: 0 },
   { category: "stagiaire", patroPct: 0, salaryPct: 0 },
 ];

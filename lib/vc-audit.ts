@@ -224,7 +224,7 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
       (p.salaries.chargesProfiles ?? DEFAULT_CHARGES).find((pr) => pr.category === cat);
     const cadrePatro = profileByCat("cadre")?.patroPct ?? 0.42;
     const nonCadrePatro = profileByCat("non-cadre")?.patroPct ?? 0.40;
-    const tnsPatro = profileByCat("tns")?.patroPct ?? 0.22;
+    const tnsPatro = profileByCat("tns")?.patroPct ?? 0.45;
     const apprentiPatro = profileByCat("apprenti")?.patroPct ?? 0.10;
     const annualMissingPatro = monthlyGrossAll * cadrePatro * 12;
     out.push({
