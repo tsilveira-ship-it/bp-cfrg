@@ -1,6 +1,6 @@
 # Reverse stress test — Scénario Base
 
-> Généré: 2026-05-12T11:21:26.276Z
+> Généré: 2026-05-12T11:26:15.722Z
 > 15 drivers × 4 métriques = 60 bisections
 
 ## Fragilités prioritaires (marge < 10%)

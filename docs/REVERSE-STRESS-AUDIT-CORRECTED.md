@@ -1,6 +1,6 @@
 # Reverse stress test — AUDIT_CORRECTED_PARAMS
 
-> Généré: 2026-05-12T11:21:26.350Z
+> Généré: 2026-05-12T11:26:15.797Z
 > 15 drivers × 4 métriques = 60 bisections
 
 ## Fragilités prioritaires (marge < 10%)

@@ -1,6 +1,6 @@
 # Reverse stress test — INVESTOR_BASE
 
-> Généré: 2026-05-12T11:21:26.448Z
+> Généré: 2026-05-12T11:26:15.894Z
 > 15 drivers × 4 métriques = 60 bisections
 
 ## Fragilités prioritaires (marge < 10%)

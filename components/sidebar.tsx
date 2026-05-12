@@ -95,6 +95,7 @@ const GROUPS: Group[] = [
       { href: "/health-check", label: "Health check", icon: HeartPulse, modes: [...ALL] },
       { href: "/cross-checks", label: "Cross-checks", icon: ShieldCheck, modes: ["analyze"] },
       { href: "/audit", label: "Audit & risques", icon: ShieldAlert, modes: [...ALL] },
+      { href: "/param-audit", label: "Audit param-par-param", icon: ListChecks, modes: [...ALL] },
       { href: "/vc-devil", label: "VC Devil's advocate", icon: Skull, modes: [...ALL], adminOnly: true },
     ],
   },
