@@ -399,6 +399,49 @@ export default function SalariesPage() {
                       </div>
                     </div>
 
+                    {/* Capacité coaching — heures de cours par semaine et auto-calc /mois.
+                        Utilisé par /capacity-planner pour seed les allocations coachs (heures
+                        dispo). N'impacte pas le coût salaire (forfaitaire). */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-2 border-t border-dashed">
+                      <div>
+                        <Label className="text-[10px] text-muted-foreground">
+                          Heures cours / semaine (par FTE)
+                        </Label>
+                        <Input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          placeholder="0"
+                          value={it.teachingHoursPerWeek ?? ""}
+                          onChange={(e) =>
+                            updateItem(idx, {
+                              teachingHoursPerWeek:
+                                e.target.value === "" ? undefined : parseFloat(e.target.value) || 0,
+                            })
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-[10px] text-muted-foreground">
+                          Heures cours / mois (auto)
+                        </Label>
+                        <div className="h-9 px-3 flex items-center rounded-md border bg-muted/40 text-xs font-mono">
+                          {(() => {
+                            const hpw = it.teachingHoursPerWeek ?? 0;
+                            const hpm = hpw * 4.3 * (it.fte || 0);
+                            return hpw > 0 ? `${hpm.toFixed(1)} h/mo` : "—";
+                          })()}
+                        </div>
+                        <p className="text-[9px] text-muted-foreground mt-0.5">
+                          = h/sem × 4,3 sem × FTE
+                        </p>
+                      </div>
+                      <div className="md:col-span-2 text-[10px] text-muted-foreground self-end pb-1">
+                        Indicatif. À utiliser dans /capacity-planner → Allocation coachs pour
+                        seed les heures cadre disponibles/mois.
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-2 border-t border-dashed">
                       <StartMonthPicker
                         value={it.startMonth}

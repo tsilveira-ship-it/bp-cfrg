@@ -671,14 +671,58 @@ export default function CapacityPlannerPage() {
                   ? cadre.monthlyGross / 130 // estim taux horaire cadre
                   : 0;
             const cost = alloc.coachKind === "freelance" ? hourly * alloc.hoursPerMonth : 0;
+            // Nombre de coachs disponibles dans ce poste cadre (= fte arrondi). Pour freelance, 1.
+            const maxCount = alloc.coachKind === "cadre" ? Math.max(1, Math.round(cadre?.fte ?? 1)) : 1;
+            const coachCount = alloc.coachCount ?? maxCount;
+            // Heures disponibles/mois pour CE poste à CE FY = teachingHoursPerWeek × 4.3 × coachCount
+            const teachingHoursPerWeek = cadre?.teachingHoursPerWeek ?? 0;
+            const availableHoursPerMonth =
+              alloc.coachKind === "cadre"
+                ? teachingHoursPerWeek * 4.3 * coachCount
+                : pool?.monthlyHours ?? 0;
             return (
               <div
                 key={alloc.id}
-                className="grid grid-cols-1 md:grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 items-end p-2 border rounded"
+                className="grid grid-cols-1 md:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto] gap-2 items-end p-2 border rounded"
               >
                 <div>
                   <Label className="text-xs">{alloc.coachKind === "cadre" ? "Cadre" : "Freelance pool"}</Label>
                   <div className="text-sm font-medium">{name}</div>
+                </div>
+                <div>
+                  <Label className="text-xs">Nb coachs</Label>
+                  {alloc.coachKind === "cadre" && maxCount > 1 ? (
+                    <select
+                      className="h-9 w-full rounded border bg-transparent px-2 text-xs"
+                      value={coachCount}
+                      onChange={(e) =>
+                        updateAllocation(alloc.id, {
+                          coachCount: parseInt(e.target.value) || 1,
+                        })
+                      }
+                    >
+                      {Array.from({ length: maxCount }, (_, i) => i + 1).map((n) => (
+                        <option key={n} value={n}>
+                          {n} / {maxCount}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="h-9 px-3 flex items-center rounded border bg-muted/40 font-mono text-xs">
+                      {coachCount}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <Label className="text-xs">H dispo / mois</Label>
+                  <div className="h-9 px-3 flex items-center rounded border bg-muted/40 font-mono text-xs">
+                    {availableHoursPerMonth > 0 ? `${availableHoursPerMonth.toFixed(0)}h` : "—"}
+                  </div>
+                  {alloc.coachKind === "cadre" && teachingHoursPerWeek === 0 ? (
+                    <p className="text-[9px] text-amber-600 mt-0.5">
+                      Saisir h/sem dans /salaries
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   <Label className="text-xs">Heures/mois</Label>
@@ -689,6 +733,16 @@ export default function CapacityPlannerPage() {
                       updateAllocation(alloc.id, {
                         hoursPerMonth: parseFloat(e.target.value) || 0,
                       })
+                    }
+                    className={
+                      availableHoursPerMonth > 0 && alloc.hoursPerMonth > availableHoursPerMonth
+                        ? "border-red-400"
+                        : ""
+                    }
+                    title={
+                      availableHoursPerMonth > 0 && alloc.hoursPerMonth > availableHoursPerMonth
+                        ? `Dépasse la dispo (${availableHoursPerMonth.toFixed(0)}h)`
+                        : undefined
                     }
                   />
                 </div>

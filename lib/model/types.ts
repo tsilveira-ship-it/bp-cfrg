@@ -72,6 +72,12 @@ export type CoachAllocation = {
   coachKind: "cadre" | "freelance";
   coachId: string;                   // référence à salaries.items[].id ou freelancePools[].id
   hoursPerMonth: number;             // heures allouées / mois
+  /**
+   * Nombre de coachs affectés sur cette ligne (default 1 ou item.fte pour cadre).
+   * Sert à calculer les heures disponibles = teachingHoursPerWeek × 4.3 × coachCount.
+   * Permet de modéliser "j'affecte 2 des 3 headcoach sur ce FY" sans dupliquer la ligne.
+   */
+  coachCount?: number;
 };
 
 /** Validation 4-eyes par champ — exige 2 admins distincts pour atteindre le niveau 2. */
@@ -222,6 +228,13 @@ export type SalaryItem = {
   ticketsResto?: number;             // €/mois part employeur
   annualRaisePct?: number;           // override % indexation annuelle pour ce poste
   fy26Bump?: number;                 // legacy: override brut FY26
+  /**
+   * Nombre d'heures de cours dispensées par semaine et par FTE. Utilisé par
+   * /capacity-planner allocation coachs pour calculer automatiquement les heures
+   * disponibles/mois (= teachingHoursPerWeek × 4.3 × fte). Indicatif uniquement,
+   * n'impacte pas le coût salaire (qui reste forfaitaire monthlyGross × fte).
+   */
+  teachingHoursPerWeek?: number;
 };
 
 export type ChargesProfile = {
