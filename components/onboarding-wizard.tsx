@@ -153,28 +153,41 @@ export function OnboardingWizard() {
           {step === 2 && (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Combien de membres au démarrage et à la fin du ramp-up (~12 mois) ?
+                Combien d&apos;acquisitions brutes ciblez-vous par mois ? FY0 = Y1, FY1 = Y2…
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-xs">Démarrage (membres new)</Label>
+                  <Label className="text-xs">Acquisitions/mois FY0</Label>
                   <Input
                     type="number"
-                    value={params.subs.rampStartCount}
-                    onChange={(e) => patch("subs.rampStartCount", parseInt(e.target.value || "0"))}
+                    step="0.5"
+                    value={params.subs.cohortModel?.acquisitionByFy?.[0] ?? 4}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value) || 0;
+                      const arr = [...(params.subs.cohortModel?.acquisitionByFy ?? [])];
+                      arr[0] = v;
+                      patch("subs.cohortModel.acquisitionByFy", arr);
+                    }}
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">Fin ramp (membres new)</Label>
+                  <Label className="text-xs">Acquisitions/mois FY1</Label>
                   <Input
                     type="number"
-                    value={params.subs.rampEndCount}
-                    onChange={(e) => patch("subs.rampEndCount", parseInt(e.target.value || "0"))}
+                    step="0.5"
+                    value={params.subs.cohortModel?.acquisitionByFy?.[1] ?? 6}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value) || 0;
+                      const arr = [...(params.subs.cohortModel?.acquisitionByFy ?? [])];
+                      arr[1] = v;
+                      patch("subs.cohortModel.acquisitionByFy", arr);
+                    }}
                   />
                 </div>
               </div>
               <p className="text-[11px] text-muted-foreground italic">
-                Réf. boxes Paris matures: 250-450 membres actifs.
+                Réf. CFRG : 4-8 acquisitions/mois en Y1, croissance 20-30% /an. Boxes mature
+                Paris atteignent 250-450 membres actifs au total.
               </p>
             </div>
           )}

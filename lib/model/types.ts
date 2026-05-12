@@ -1033,16 +1033,43 @@ export function normalizeParams(p: any): ModelParams {
       ]
     : [];
 
-  // Migration cohort : si l'ancien shape (acquisitionStart/End/GrowthByFy) est présent
-  // sans `acquisitionByFy`, dérive le tableau étagé par FY. Approche : prendre la moyenne
-  // arithmétique de la ramp FY0 (Start, End) comme valeur FY0, puis appliquer croissance
-  // composée pour les FY suivants. Préserve la trajectoire totale d'acquisitions à ±5%
-  // sur la majorité des scénarios, et l'utilisateur peut affiner après migration.
+  // Migration cohort : le mode cohort est TOUJOURS actif désormais (NET legacy supprimé
+  // du compute). Si absent ou inactif, on le seed à partir du ramp NET legacy via
+  // Little's law : acquisitions/mois (steady state) ≈ stockCible × churn.
+  // Sinon migration ancienne shape (acquisitionStart/End/GrowthByFy → acquisitionByFy).
   const cm = p.subs?.cohortModel;
-  let migratedCohort = cm;
-  if (cm && cm.acquisitionByFy === undefined && typeof cm.acquisitionStart === "number") {
+  const Y = timeline.horizonYears;
+  const rampStart: number = p.subs?.rampStartCount ?? 80;
+  const rampEnd: number = p.subs?.rampEndCount ?? 200;
+  const churn: number = p.subs?.monthlyChurnPct ?? 0.025;
+  const localGrowth = growthRates;
+
+  let migratedCohort: ModelParams["subs"]["cohortModel"];
+  if (!cm || !cm.enabled) {
+    // Seed depuis ramp NET legacy : acquisitionByFy[0] = approximation Little's law sur
+    // stock fin Y0, puis croissance composée growthRates pour les FY suivants. Garantit
+    // qu'un scénario ancien sans cohort produit un compte cohérent avec son ramp.
+    const acqFy0 = Math.max(1, rampEnd * Math.max(churn, 0.015));
+    const acquisitionByFy: number[] = new Array(Y).fill(acqFy0);
+    let cur = acqFy0;
+    for (let fy = 1; fy < Y; fy++) {
+      const g = localGrowth[fy - 1] ?? 0;
+      cur = cur * (1 + g);
+      acquisitionByFy[fy] = Math.round(cur * 10) / 10;
+    }
+    migratedCohort = {
+      enabled: true,
+      acquisitionStart: acqFy0,
+      acquisitionEnd: acqFy0,
+      acquisitionGrowthByFy: localGrowth.slice(),
+      acquisitionByFy: acquisitionByFy.map((v) => Math.round(v * 10) / 10),
+      ...(cm ?? {}),
+      // re-force enabled true après spread (cm peut contenir enabled:false)
+      ...((cm && !cm.enabled) ? { enabled: true } : {}),
+    };
+  } else if (cm.acquisitionByFy === undefined && typeof cm.acquisitionStart === "number") {
+    // Migration ancienne shape vers acquisitionByFy
     const acqFy0 = (cm.acquisitionStart + (cm.acquisitionEnd ?? cm.acquisitionStart)) / 2;
-    const Y = timeline.horizonYears;
     const growthByFy: number[] = Array.isArray(cm.acquisitionGrowthByFy)
       ? cm.acquisitionGrowthByFy
       : [];
@@ -1053,7 +1080,10 @@ export function normalizeParams(p: any): ModelParams {
       cur = cur * (1 + g);
       acquisitionByFy[fy] = cur;
     }
-    migratedCohort = { ...cm, acquisitionByFy };
+    migratedCohort = { ...cm, enabled: true, acquisitionByFy };
+  } else {
+    // Force enabled true sur scénarios déjà en mode cohort (au cas où désactivé)
+    migratedCohort = { ...cm, enabled: true };
   }
 
   // Migration funnel pivot : le funnel commercial est toujours actif désormais.

@@ -37,8 +37,9 @@ export function buildExecutiveSummary(p: ModelParams, r: ModelResult): ExecSecti
           `avec ouverture prévue en septembre ${p.timeline.startYear}. Le business plan projette ` +
           `${p.timeline.horizonYears} années d'exploitation jusqu'en ${lastFy.label}.`,
         `Le modèle économique repose sur ${tiers.length} tier(s) d'abonnement (prix moyen pondéré ` +
-          `${fmtCurrency(avgPrice)}/mois TTC) avec ramp-up de ${p.subs.rampStartCount} à ` +
-          `${p.subs.rampEndCount} membres sur 12 mois, complété par des prestations (cours teen, ` +
+          `${fmtCurrency(avgPrice)}/mois TTC) avec une cible de ${Math.round(lastSubsCount)} ` +
+          `membres en fin d'horizon, alimentée par un funnel commercial dimensionné (leads → ` +
+          `appels freelance → bilans → abonnements). Complété par des prestations (cours teen, ` +
           `senior, hors-abo) et du merchandising.`,
       ],
     },
@@ -77,7 +78,7 @@ export function buildExecutiveSummary(p: ModelParams, r: ModelResult): ExecSecti
     {
       title: "Hypothèses critiques",
       paragraphs: [
-        `Le BP repose sur ${p.subs.rampEndCount} membres en fin de ramp-up (référence: 250-450 pour boxes ` +
+        `Le BP cible ${Math.round(lastSubsCount)} membres en fin d'horizon (référence: 250-450 pour boxes ` +
           `Paris matures), un churn mensuel de ${fmtPct(p.subs.monthlyChurnPct ?? 0, 1)} ` +
           `(industrie fitness 3-5%, CrossFit communauté 1.5-3%), et une indexation prix de ${fmtPct(p.subs.priceIndexPa, 0)}/an.`,
         `Côté coûts: loyer ${fmtCurrency(p.rent.monthlyByFy[0] ?? 0, { compact: true })}/mois en M0 ` +

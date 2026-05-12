@@ -27,16 +27,21 @@ export function topKeyHypotheses(p: ModelParams, n = 10): KeyHypothesis[] {
   const loans = (p.financing.loans ?? []).reduce((s, x) => s + x.principal, 0);
   const bonds = (p.financing.bonds ?? []).reduce((s, x) => s + x.principal, 0);
   const totalRaised = equity + loans + bonds;
-  const firstYearGrowth = p.subs.growthRates?.[0] ?? 0;
+  // Driver #1 = acquisitions/mois cibles (cohort.acquisitionByFy). Remplace l'ancien
+  // `rampEndCount` qui dépendait du mode NET legacy supprimé.
+  const acqByFy = p.subs.cohortModel?.acquisitionByFy ?? [];
+  const acqFy0 = acqByFy[0] ?? 0;
+  const acqFy1 = acqByFy[1] ?? acqFy0;
+  const growthFy0Fy1 = acqFy0 > 0 ? acqFy1 / acqFy0 - 1 : 0;
   const allHypotheses: KeyHypothesis[] = [
     {
       rank: 1,
       category: "Recettes",
-      label: "Membres en fin de ramp-up",
-      value: `${fmtNum(p.subs.rampEndCount)} membres`,
-      rawValue: p.subs.rampEndCount,
-      paths: ["subs.rampEndCount"],
-      rationale: "Référence boxes Paris matures: 250-450 membres actifs. Driver #1 du CA.",
+      label: "Acquisitions / mois (Y1)",
+      value: `${fmtNum(acqFy0)} acquis./mois`,
+      rawValue: acqFy0,
+      paths: ["subs.cohortModel.acquisitionByFy.0"],
+      rationale: "Driver #1 du compte d'abos. Saisi dans le mode cohort. 1 abo signé par X leads × taux conversion funnel.",
     },
     {
       rank: 2,
@@ -50,11 +55,11 @@ export function topKeyHypotheses(p: ModelParams, n = 10): KeyHypothesis[] {
     {
       rank: 3,
       category: "Recettes",
-      label: `Croissance abos année 1 → 2`,
-      value: fmtPct(firstYearGrowth, 0),
-      rawValue: firstYearGrowth,
-      paths: ["subs.growthRates.0"],
-      rationale: "30% typique post-ramp pour boxes en zone tendue. À calibrer vs étude marché.",
+      label: `Croissance acquisitions Y1 → Y2`,
+      value: fmtPct(growthFy0Fy1, 0),
+      rawValue: growthFy0Fy1,
+      paths: ["subs.cohortModel.acquisitionByFy.1"],
+      rationale: "Acquisitions cibles passent de FY0 à FY1. 20-30% typique post-ouverture.",
     },
     {
       rank: 4,

@@ -80,9 +80,16 @@ function applyShock(p: ModelParams, driverId: string, shock: number, maxOpeningD
         out.subs.growthRates = out.subs.growthRates.map((g) => clampBound(g * factor, SENSITIVITY_BOUNDS.subsGrowth));
       }
       break;
-    case "rampEnd":
+    case "rampEnd": {
+      // Mode NET legacy supprimé : on stresse `cohortModel.acquisitionByFy[]` (driver
+      // principal du compte d'abos). ID conservé pour rétro-compat des consommateurs UI.
+      const cm = out.subs.cohortModel;
+      if (cm?.acquisitionByFy) {
+        cm.acquisitionByFy = cm.acquisitionByFy.map((v) => Math.max(0, v * factor));
+      }
       out.subs.rampEndCount = Math.max(out.subs.rampStartCount, out.subs.rampEndCount * factor);
       break;
+    }
     case "priceIndex":
       out.subs.priceIndexPa = clampBound(out.subs.priceIndexPa * factor, SENSITIVITY_BOUNDS.priceIndexPa);
       break;

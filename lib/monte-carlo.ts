@@ -26,7 +26,7 @@ export type MCDriver = {
 export const DEFAULT_DRIVERS: MCDriver[] = [
   // Demand / revenue
   { id: "subsGrowth", label: "Croissance abos (taux annuels)", rangePct: 0.20, enabled: true },
-  { id: "rampEnd", label: "Ramp-up final (rampEndCount)", rangePct: 0.20, enabled: true },
+  { id: "rampEnd", label: "Acquisitions cibles (× facteur)", rangePct: 0.20, enabled: true },
   { id: "priceIndex", label: "Indexation prix abos", rangePct: 0.50, enabled: true, category: "inflation", correlationWeight: 0.6 },
   { id: "churn", label: "Churn mensuel", rangePct: 0.50, enabled: true },
   { id: "mixPremiumShift", label: "Mix premium (basculement tier)", rangePct: 0.20, enabled: false },
@@ -236,6 +236,12 @@ function sampleParams(
   }
   if (enabled.has("rampEnd")) {
     const f = tirer("rampEnd");
+    // Mode NET legacy supprimé : stress sur cohort.acquisitionByFy. ID "rampEnd"
+    // conservé pour rétro-compat UI labels.
+    const cm = p.subs.cohortModel;
+    if (cm?.acquisitionByFy) {
+      cm.acquisitionByFy = cm.acquisitionByFy.map((v) => Math.max(0, v * f));
+    }
     p.subs.rampEndCount = Math.max(p.subs.rampStartCount, p.subs.rampEndCount * f);
   }
   if (enabled.has("priceIndex")) {

@@ -73,12 +73,24 @@ const DEFAULT_SLIDERS: Sliders = {
 };
 
 function applySliders(p: ModelParams, s: Sliders): ModelParams {
+  // Stress test : caMultiplier scale les acquisitions cibles (cohort.acquisitionByFy).
+  // Mode NET legacy supprimé ; on garde rampStart/End scale pour rétro-compat lecture
+  // mais le compute n'en dépend plus.
+  const cm = p.subs.cohortModel;
   const out: ModelParams = {
     ...p,
     subs: {
       ...p.subs,
       rampStartCount: p.subs.rampStartCount * s.caMultiplier,
       rampEndCount: p.subs.rampEndCount * s.caMultiplier,
+      cohortModel: cm
+        ? {
+            ...cm,
+            acquisitionByFy: cm.acquisitionByFy
+              ? cm.acquisitionByFy.map((v) => v * s.caMultiplier)
+              : cm.acquisitionByFy,
+          }
+        : cm,
       priceIndexPa: p.subs.priceIndexPa * s.priceIndexMultiplier,
       monthlyChurnPct:
         p.subs.monthlyChurnPct !== undefined
@@ -134,10 +146,22 @@ function applySliders(p: ModelParams, s: Sliders): ModelParams {
 
   if (s.openingDelayMonths > 0) {
     const lostFraction = Math.max(0, Math.min(1, s.openingDelayMonths / 12));
+    const cmDelay = out.subs.cohortModel;
     out.subs = {
       ...out.subs,
       rampStartCount: out.subs.rampStartCount * (1 - lostFraction),
       rampEndCount: out.subs.rampEndCount * (1 - lostFraction * 0.5),
+      cohortModel: cmDelay
+        ? {
+            ...cmDelay,
+            acquisitionByFy: cmDelay.acquisitionByFy
+              ? cmDelay.acquisitionByFy.map((v, i) =>
+                  // FY0 perd lostFraction, FY1+ perd la moitié (rattrapage)
+                  i === 0 ? v * (1 - lostFraction) : v * (1 - lostFraction * 0.5)
+                )
+              : cmDelay.acquisitionByFy,
+          }
+        : cmDelay,
     };
     out.marketing = {
       ...out.marketing,

@@ -152,8 +152,9 @@ export function buildAssumptionsSheet(p: ModelParams): Sheet {
   const rows: (string | number)[][] = [["Catégorie", "Paramètre", "Valeur"]];
   rows.push(["Timeline", "Année de démarrage (Sept N)", p.timeline.startYear]);
   rows.push(["Timeline", "Horizon (années)", p.timeline.horizonYears]);
-  rows.push(["Subs", "Ramp start", p.subs.rampStartCount]);
-  rows.push(["Subs", "Ramp end", p.subs.rampEndCount]);
+  // Acquisitions cibles par FY (cohort) — driver principal du compte d'abos
+  const acqByFy = p.subs.cohortModel?.acquisitionByFy ?? [];
+  acqByFy.forEach((v, i) => rows.push([`Subs cohort`, `Acquisitions/mois FY${i}`, v]));
   rows.push(["Subs", "Indexation prix p.a.", p.subs.priceIndexPa]);
   rows.push(["Subs", "Churn mensuel", p.subs.monthlyChurnPct ?? 0]);
   rows.push(["Subs", "TVA", p.subs.vatRate]);

@@ -1,5 +1,6 @@
 import type { ModelParams, ModelResult } from "./model/types";
 import { getSectorBenchmarks, getAuditThresholds } from "./model/defaults";
+import { monthlyAcquisitions } from "./model/compute";
 
 export type VCSeverity = "kill" | "major" | "yellow" | "watch";
 export type VCDimension =
@@ -54,19 +55,27 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
   const cumulativeNetIncome = r.yearly.reduce((s, y) => s + y.netIncome, 0);
   const churn = p.subs.monthlyChurnPct ?? 0;
   const lastSubsCount = r.monthly[r.monthly.length - 1]?.subsCount ?? 0;
-  const marketingY1 = p.marketing.monthlyBudget * 12;
-  const newMembersY1Approx = Math.max(1, p.subs.rampEndCount - p.subs.rampStartCount);
+  const marketingY1 = r.yearly[0]?.marketing ?? p.marketing.monthlyBudget * 12;
+  // Acquisitions Y1 dérivées du cohort (acquisitionByFy × saisonnalité). Remplace
+  // l'ancien calcul `rampEnd - rampStart` qui dépendait du mode NET legacy.
+  const newMembersY1Approx = Math.max(
+    1,
+    monthlyAcquisitions(p, Math.min(12, r.horizonMonths))
+      .slice(0, 12)
+      .reduce((s, v) => s + v, 0)
+  );
   const cacApprox = marketingY1 / newMembersY1Approx;
   const ltvMonths = churn > 0 ? 1 / churn : 60;
   const ltv = avgPrice * ltvMonths;
   const ltvOverCac = cacApprox > 0 ? ltv / cacApprox : Infinity;
 
   // === MARCHÉ & DEMANDE ===
+  const m11 = r.monthly[11]?.subsCount ?? 0;
   out.push({
     id: "tam-sam-som",
     dimension: "Marché & demande",
     severity: "major",
-    claim: "Le BP raisonne sur un ramp 80→200 membres sans définir le marché adressable.",
+    claim: `Le BP cible ${Math.round(m11)} membres fin Y1 sans définir le marché adressable.`,
     challenge:
       "Quel est le TAM (fitness Paris ~1.5M pratiquants ?), le SAM (CrossFit/Hyrox 6e arr ~?), le SOM (zone primaire 800m) ? Combien de boxes dans un rayon de 2km ? Pourquoi un nouvel entrant gagne ?",
     evidence:
@@ -78,11 +87,11 @@ export function runVCAudit(p: ModelParams, r: ModelResult): VCFinding[] {
     id: "demand-validation",
     dimension: "Marché & demande",
     severity: "major",
-    claim: `Hypothèse: ${p.subs.rampStartCount} membres dès M0, ${p.subs.rampEndCount} fin M12.`,
+    claim: `Hypothèse: ~${newMembersY1Approx.toFixed(0)} acquisitions brutes en Y1 (fin Y1 ${Math.round(m11)} membres).`,
     challenge:
       "Pré-inscriptions signées ? Liste d'attente ? Lettre intention bailleur sur affluence ? Sans signal de demande contractualisé, c'est de la pensée magique.",
     evidence:
-      `${p.subs.rampStartCount} départ = ouverture quasi-pleine d'un nouveau site. Les boxes Paris atteignent 250-450 mature (cf SECTOR_BENCHMARKS.membersMatureCrossfit) sur 18-36 mois, pas 12. ${p.legacy?.startCount ?? 0} legacy pré-existants aident mais ne suffisent pas.`,
+      `Les boxes Paris atteignent ${SECTOR_BENCHMARKS.membersMatureCrossfit.low}-${SECTOR_BENCHMARKS.membersMatureCrossfit.high} mature (cf SECTOR_BENCHMARKS.membersMatureCrossfit) sur 18-36 mois, pas 12. ${p.legacy?.startCount ?? 0} legacy pré-existants aident mais ne suffisent pas.`,
     fix: "Publier liste de pré-inscriptions horodatées (signed-up + dépôt 50€), reviews Google de la marque CFRG, taux de conversion bilans → abos sur 6 mois pré-ouverture.",
   });
 

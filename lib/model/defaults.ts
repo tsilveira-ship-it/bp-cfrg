@@ -16,11 +16,21 @@ export const DEFAULT_PARAMS: ModelParams = {
       { id: "s4",   name: "Abo 4 séances", monthlyPrice: 70.83, mixPct: 0.10 },
     ],
     vatRate: 0.20,
+    // @deprecated — mode NET legacy supprimé du compute. Valeurs conservées pour rétro-compat
+    // lecture des scénarios anciens uniquement. Ne plus utiliser en saisie utilisateur.
     rampStartCount: 80,
     rampEndCount: 200,
-    // 6 taux de croissance pour FY27..FY32 (post ramp-up FY26)
     growthRates: [0.40, 0.30, 0.20, 0.15, 0.10, 0.08],
     priceIndexPa: 0.0,
+    // Cohort model — toujours actif désormais. La cible d'acquisitions est saisie via
+    // `acquisitionByFy` (1 valeur/FY) au lieu d'un ramp + growth. Plus simple et défendable.
+    cohortModel: {
+      enabled: true,
+      acquisitionStart: 4,
+      acquisitionEnd: 8,
+      acquisitionGrowthByFy: [0.30, 0.20, 0.15, 0.10, 0.08, 0.05],
+      acquisitionByFy: [6, 8, 10, 11, 12, 13, 14],
+    },
     // Saisonnalité Sept..Août. Sept et janv = pics, juillet/août = creux
     seasonality: [1.20, 1.05, 1.0, 0.85, 1.15, 1.05, 1.0, 0.95, 0.90, 0.80, 0.65, 0.60],
     monthlyChurnPct: 0.0,

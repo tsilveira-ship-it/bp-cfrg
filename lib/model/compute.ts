@@ -366,10 +366,11 @@ function monthlySubsCountCohort(p: ModelParams, horizonMonths: number): number[]
 }
 
 function monthlySubsCount(p: ModelParams, horizonMonths: number): number[] {
-  const useCohort = p.subs.cohortModel?.enabled === true;
-  return useCohort
-    ? monthlySubsCountCohort(p, horizonMonths)
-    : monthlySubsCountNetTarget(p, horizonMonths);
+  // Cohort toujours actif désormais (NET legacy supprimé). normalizeParams garantit
+  // que cohortModel.enabled === true. Le fallback sur monthlySubsCountNetTarget est
+  // conservé uniquement comme garde-fou défensif si un scénario malformé est chargé.
+  if (p.subs.cohortModel?.enabled === true) return monthlySubsCountCohort(p, horizonMonths);
+  return monthlySubsCountNetTarget(p, horizonMonths);
 }
 
 /**

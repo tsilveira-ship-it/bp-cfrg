@@ -163,117 +163,11 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
         </div>
       </section>
 
-      {/* Sections legacy : ramp NET + growthRates. Collapsed par défaut quand cohort actif
-          (= cas recommandé). Conservées pour rétro-compat scénarios anciens et pour seed
-          du bouton "Seed depuis cible NET" du cohort. Marquage deprecated visible. */}
-      <details open={!cohortEnabled} className="border border-dashed rounded-md">
-        <summary className="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:bg-muted/30">
-          Mode NET legacy — Ramp + growthRates {cohortEnabled ? "(ignoré, cohort actif)" : "(actif)"}
-        </summary>
-        <div className="p-3 space-y-4 border-t">
-          {cohortEnabled ? (
-            <div className="text-[11px] bg-amber-50 border border-amber-300 rounded p-2 space-y-1">
-              <div>
-                <strong className="text-amber-800">Pas d'impact direct sur le compute</strong> —
-                en mode cohort actif, <code>compute.ts</code> ignore <code>rampStartCount</code>,
-                <code> rampEndCount</code> et <code>growthRates</code> pour la trajectoire d'abos.
-              </div>
-              <div>
-                Ces valeurs restent utilisées par : (a) le bouton <em>Seed depuis cible NET</em>
-                du mode cohort (Little's law <code>rampEndCount × churn</code>), (b) les métriques
-                dérivées d'audit (CAC implicite Y1 = budget marketing × 12 ÷ <code>rampEnd − rampStart</code>),
-                (c) le moteur de stress tests (driver <code>rampStart/rampEnd</code>). Si tu modifies
-                ces 3 valeurs, mets-les en cohérence avec ta trajectoire cohort pour que les KPIs
-                d'audit restent lisibles.
-              </div>
-            </div>
-          ) : (
-            <div className="text-[11px] bg-amber-50 border border-amber-300 rounded p-2">
-              <strong className="text-amber-800">Mode NET legacy actif</strong> — interpolation
-              linéaire entre <code>rampStartCount</code> et <code>rampEndCount</code> puis
-              croissance FY-over-FY. Recommandé : activer <em>Mode cohort</em> ci-dessous pour
-              piloter par acquisitions brutes (modélisation plus défendable).
-            </div>
-          )}
-
-          <section className={cohortEnabled ? "opacity-60" : ""}>
-            <div className="flex items-center justify-between mb-2">
-              <h5 className="font-heading text-xs font-semibold uppercase tracking-wider">
-                Ramp NET {tl.fyLabels[0]} ({tl.monthLabels[0]} → {tl.monthLabels[11]})
-              </h5>
-              <span className="text-[10px] text-muted-foreground">
-                +{fmtNum(subs.rampEndCount - subs.rampStartCount)} membres en 12 mois
-              </span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <ParamNumber
-                path="subs.rampStartCount"
-                label={`Membres ${tl.monthLabels[0]}`}
-                value={subs.rampStartCount}
-              />
-              <ParamNumber
-                path="subs.rampEndCount"
-                label={`Membres ${tl.monthLabels[11]} (cible)`}
-                value={subs.rampEndCount}
-              />
-            </div>
-          </section>
-
-          <section className={cohortEnabled ? "opacity-60" : ""}>
-            <div className="flex items-center justify-between mb-2">
-              <h5 className="font-heading text-xs font-semibold uppercase tracking-wider">
-                Croissance NET {tl.fyLabels[1] ?? ""} → {tl.fyLabels[tl.horizonYears - 1] ?? ""}
-              </h5>
-              <div className="flex items-center gap-1">
-                <Button variant="ghost" size="sm" onClick={() => applyAll(0.20)} disabled={cohortEnabled} className="text-[10px] h-6">
-                  20%
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => applyAll(0.10)} disabled={cohortEnabled} className="text-[10px] h-6">
-                  10%
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => applyAll(0)} disabled={cohortEnabled} className="text-[10px] h-6">
-                  0%
-                </Button>
-              </div>
-            </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          {growths.map((g, idx) => (
-            <div
-              key={idx}
-              className={`p-3 border rounded-md space-y-2 ${cohortEnabled ? "bg-muted/10" : "bg-muted/20"}`}
-            >
-              <Label className="text-xs font-medium">Croissance {tl.fyLabels[idx + 1]}</Label>
-              <div className="relative">
-                <Input
-                  type="number"
-                  step={1}
-                  value={(g * 100).toFixed(1).replace(/\.0$/, "")}
-                  disabled={cohortEnabled}
-                  onChange={(e) =>
-                    setParams((p) => ({
-                      ...p,
-                      subs: {
-                        ...p.subs,
-                        growthRates: (p.subs.growthRates ?? []).map((x, i) =>
-                          i === idx ? (parseFloat(e.target.value) || 0) / 100 : x
-                        ),
-                      },
-                    }))
-                  }
-                  className="pr-7"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
-              </div>
-              <div className="text-[10px] text-muted-foreground leading-tight">
-                Fin {tl.fyLabels[idx + 1]}: <span className="font-semibold text-foreground">{fmtNum(endCounts[idx + 1])}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-          </section>
-        </div>
-      </details>
+      {/* Mode NET legacy (rampStartCount + rampEndCount + growthRates) entièrement supprimé
+          de l'UI. Le mode cohort (acquisitions par FY) est désormais l'unique source de
+          vérité pour la trajectoire d'abos. Les champs legacy restent en types pour
+          rétro-compat lecture des scénarios anciens (normalizeParams les ignore et seed
+          cohort à partir d'eux si nécessaire). */}
 
       <CohortModelSection params={params} setParams={setParams} />
       <AdvancedSubsSection params={params} setParams={setParams} />
@@ -714,10 +608,14 @@ function CohortModelSection({
     });
   };
 
-  // Auto-calc depuis Little's law sur cible NET legacy (si présente) — produit une valeur
-  // d'acquisitions/mois plate qui maintient le stock cible. L'utilisateur affine ensuite.
+  // Helper "Auto-calc steady state" — utilise Little's law sur un stock cible saisi
+  // par l'utilisateur (prompt simple). Plus de dépendance à rampEndCount legacy.
   const autoCalcFromTarget = () => {
-    const targetNet = params.subs.rampEndCount > 0 ? params.subs.rampEndCount : 200;
+    const promptVal = typeof window !== "undefined"
+      ? window.prompt("Cible de membres total fin d'horizon (ex 250) ?", "250")
+      : "250";
+    const targetNet = parseFloat(promptVal ?? "0");
+    if (!targetNet || targetNet <= 0) return;
     const churnRate = params.subs.monthlyChurnPct ?? 0.025;
     const acqSteady = Math.max(
       1,
@@ -726,15 +624,8 @@ function CohortModelSection({
     setParams((p) => {
       const existing = p.subs.cohortModel;
       const Y = p.timeline.horizonYears;
-      // Cible NET croît avec growthRates → on applique le même taux aux acquisitions.
+      // Plat sur la durée. L'utilisateur affine ensuite par FY.
       const arr = new Array<number>(Y).fill(acqSteady);
-      const growthRates = p.subs.growthRates ?? [];
-      let cur = acqSteady;
-      for (let i = 1; i < Y; i++) {
-        const g = growthRates[i - 1] ?? 0;
-        cur = cur * (1 + g);
-        arr[i] = Math.round(cur * 10) / 10;
-      }
       return {
         ...p,
         subs: {
@@ -761,30 +652,20 @@ function CohortModelSection({
           <Layers className="h-4 w-4 text-[var(--color-brand-red,#D32F2F)]" />
           <div>
             <h4 className="font-heading text-sm font-semibold uppercase tracking-wider">
-              Mode cohort (acquisitions brutes)
+              Acquisitions brutes par FY
             </h4>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Modélisation explicite acquisition × rétention. Désactivé = cible NET legacy.
+              Modélisation cohort acquisition × rétention. Toujours actif — driver principal
+              du compte d&apos;abos.
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Label htmlFor="cohort-toggle" className="text-xs">
-            {enabled ? "Activé" : "Désactivé"}
-          </Label>
-          <Switch
-            id="cohort-toggle"
-            checked={enabled}
-            onCheckedChange={setEnabled}
-          />
-        </div>
       </div>
 
-      {enabled && cm ? (
+      {cm ? (
         <div className="space-y-4">
           <div className="text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/20 border border-amber-300 rounded p-2">
-            <strong>Mode cohort actif</strong> — les champs <code>rampStart/rampEnd</code> et{" "}
-            <code>growthRates</code> ci-dessus sont <em>ignorés</em>. La trajectoire est calculée
+            <strong>Cohort actif</strong> — la trajectoire est calculée
             depuis les acquisitions mensuelles brutes ci-dessous, puis chaque cohorte décroît au
             taux <code>{(churn * 100).toFixed(2)}%</code>/mois.
             <span className="block mt-1 text-amber-600">
@@ -837,7 +718,7 @@ function CohortModelSection({
               className="text-xs h-7"
               title="Seed acquisitions/mois par FY depuis cible NET × churn (Little's law) puis applique growthRates aux FY suivants. Utile pour partir d'une valeur défendable."
             >
-              Seed depuis cible NET ({fmtNum(params.subs.rampEndCount)} membres × churn)
+              Seed depuis cible membres (Little&apos;s law)
             </Button>
             <Button
               variant="ghost"
@@ -850,12 +731,7 @@ function CohortModelSection({
             </Button>
           </div>
         </div>
-      ) : (
-        <p className="text-xs text-muted-foreground italic">
-          Activer pour modéliser l&apos;acquisition mensuelle indépendamment de la rétention.
-          Utile pour calibrer CAC, modéliser scénarios churn, et simuler le funnel Bilan → abo.
-        </p>
-      )}
+      ) : null}
     </section>
   );
 }
