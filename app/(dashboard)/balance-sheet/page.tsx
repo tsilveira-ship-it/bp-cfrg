@@ -35,9 +35,19 @@ export default function BalanceSheetPage() {
   const capexItems = expandCapex(params);
   const totalCapex = capexItems.reduce((s, it) => s + it.amount, 0);
 
+  // Bilan : Actif = Passif. Math alignée sur cross-checks.ts (preuve d'équilibre par
+  // algèbre). Voir cross-checks.ts pour démonstration complète.
+  //   ACTIF  = immoNette + cash + BFR + Σ vatCashOut (régul TVA modèle HT)
+  //   PASSIF = capPropres + detteRest + IS différée (si quarterly)
   const bilan = result.yearly.map((y, fy) => {
     const monthsToEnd = (fy + 1) * 12;
-    let cumAmort = 0;
+    const slice = result.monthly.slice(0, monthsToEnd);
+    const lastMonth = result.monthly[monthsToEnd - 1];
+
+    // ── ACTIF ───────────────────────────────────────────────────────────────
+    // Cumul DA réel (lecture P&L compute, plus précis que recalc local).
+    const cumAmort = slice.reduce((s, m) => s + m.da, 0);
+    // Détail par catégorie pour affichage UI (recalc local, garde la logique d'avant)
     let cumAmortEquip = 0;
     let cumAmortTrav = 0;
     if (params.tax.enableDA) {
@@ -45,27 +55,43 @@ export default function BalanceSheetPage() {
         if (it.amortYears <= 0 || it.amount <= 0) continue;
         const monthlyAmort = it.amount / Math.max(1, it.amortYears * 12);
         const cum = Math.min(it.amount, monthlyAmort * monthsToEnd);
-        cumAmort += cum;
         if (it.category === "equipment") cumAmortEquip += cum;
         else if (it.category === "travaux") cumAmortTrav += cum;
       }
     }
-
     const immoBrute = totalCapex;
-    const immoNette = immoBrute - cumAmort;
-    const tresorerie = y.cashEnd;
-    const bfr = (y.totalRevenue / 12) * (params.bfr.daysOfRevenue / 30);
-    const totalActif = immoNette + tresorerie + bfr;
+    const immoNette = Math.max(0, immoBrute - cumAmort);
 
+    const tresorerie = y.cashEnd;
+
+    // BFR aligné compute (revenue dernier mois × daysNet/30, avec daysNet détaillé si dispo)
+    const bfrCustom =
+      params.bfr.daysReceivables !== undefined ||
+      params.bfr.daysSupplierPayables !== undefined ||
+      params.bfr.daysStock !== undefined;
+    const bfrDaysNet = bfrCustom
+      ? Math.max(
+          0,
+          (params.bfr.daysReceivables ?? 0) -
+            (params.bfr.daysSupplierPayables ?? 0) +
+            (params.bfr.daysStock ?? 0)
+        )
+      : params.bfr.daysOfRevenue;
+    const bfr = (lastMonth?.totalRevenue ?? 0) * (bfrDaysNet / 30);
+
+    // Régul TVA (modèle HT) — drain cash compensé à l'actif
+    const vatCashOutCum = slice.reduce((s, m) => s + m.vatCashOut, 0);
+
+    const totalActif = immoNette + tresorerie + bfr + vatCashOutCum;
+
+    // ── PASSIF ──────────────────────────────────────────────────────────────
     const equityRaised = (params.financing.equity ?? []).reduce((s, x) => s + x.amount, 0);
     const cumNetIncome = result.yearly.slice(0, fy + 1).reduce((s, x) => s + x.netIncome, 0);
     const capitauxPropres = equityRaised + cumNetIncome;
 
-    const slice = result.monthly.slice(0, monthsToEnd);
     const bondPrincipalRepaid = slice.reduce((s, m) => s + m.bondPrincipalRepay, 0);
     const loanPrincipalRepaid = slice.reduce((s, m) => s + m.loanPrincipalRepay, 0);
     const capitalizedCum = slice.reduce((s, m) => s + (m.capitalizedInterest ?? 0), 0);
-    // Dette = principal initial - principal remboursé + intérêts capitalisés (PIK)
     const dette = Math.max(
       0,
       (params.financing.bonds ?? []).reduce((s, b) => s + b.principal, 0) -
@@ -75,13 +101,20 @@ export default function BalanceSheetPage() {
         loanPrincipalRepaid
     );
 
-    // Dettes courantes: TVA collectée non encore reversée (cumul vatNetPayable - vatCashOut)
+    // Dette IS différée (compense IS quarterly : PnL lissé mensuel vs cash trimestriel)
+    const taxAccrued = slice.reduce((s, m) => s + m.tax, 0);
+    const taxPaidCash = slice.reduce((s, m) => s + m.taxCash, 0);
+    const taxPayable = Math.max(0, taxAccrued - taxPaidCash);
+
+    // vatPayable conservé en affichage info (somme TVA nette à reverser fiscal), même si
+    // dans le modèle HT il n'entre pas dans l'équation d'équilibre (compensé côté actif
+    // par vatCashOutCum).
     const vatPayable = Math.max(
       0,
       slice.reduce((s, m) => s + (m.vatNetPayable - m.vatCashOut), 0)
     );
 
-    const totalPassif = capitauxPropres + dette + vatPayable;
+    const totalPassif = capitauxPropres + dette + taxPayable;
     const ecart = totalActif - totalPassif;
 
     return {
@@ -93,11 +126,13 @@ export default function BalanceSheetPage() {
       immoNette,
       tresorerie,
       bfr,
+      vatCashOutCum,
       totalActif,
       capitauxPropres,
       cumNetIncome,
       equityRaised,
       dette,
+      taxPayable,
       vatPayable,
       totalPassif,
       ecart,

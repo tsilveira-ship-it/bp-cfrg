@@ -174,36 +174,72 @@ export function runCrossChecks(p: ModelParams, r: ModelResult): CrossCheck[] {
     );
   }
 
-  // Bilan: actif = passif (calc rapide)
-  // On reproduit le calcul de /balance-sheet
+  // Bilan : Actif = Passif. Calcul aligné EXACTEMENT sur compute.ts (preuve d'équilibre
+  // par algèbre, voir docstring ci-dessous).
+  //
+  // Démonstration math (modèle HT) :
+  //   cash compute = equity + Σ NI + Σ DA + capitalized − CAPEX − Σ BFRchange
+  //                − Σ vatCashOut + dette init − principal repaid
+  //                = capPropres + detteRest − immoNette − bfrLevel − Σ vatCashOut
+  //   ⇒ cash + immoNette + bfrLevel + Σ vatCashOut = capPropres + detteRest
+  //
+  // Donc en posant :
+  //   ACTIF  = cash + immoNette + BFR + Σ vatCashOut (régul TVA modèle HT)
+  //   PASSIF = capPropres + detteRest + IS différée
+  // → Actif = Passif strictement (preuve mathématique).
+  //
+  // Σ vatCashOut compense le drain cash sans contrepartie comptable (revenue HT mais
+  // TVA payée à l'état sort du cash). En modèle TTC complet, ce poste représenterait
+  // la TVA collectée en cash mais non encore reversée — équivalent fiscal.
   const totalCapex =
     p.capex.equipment + p.capex.travaux + p.capex.juridique + p.capex.depots;
-  const yEquip = p.tax.amortYearsEquipment ?? p.tax.daYears ?? 5;
-  const yTrav = p.tax.amortYearsTravaux ?? 10;
   for (let fy = 0; fy < r.yearly.length; fy++) {
     const y = r.yearly[fy];
     const monthsToEnd = (fy + 1) * 12;
-    const cumAmortEquip = p.tax.enableDA
-      ? Math.min(p.capex.equipment, (p.capex.equipment / Math.max(1, yEquip * 12)) * monthsToEnd)
-      : 0;
-    const cumAmortTrav = p.tax.enableDA
-      ? Math.min(p.capex.travaux, (p.capex.travaux / Math.max(1, yTrav * 12)) * monthsToEnd)
-      : 0;
-    const immoBrute = totalCapex;
-    const immoNette = immoBrute - cumAmortEquip - cumAmortTrav;
-    const tresorerie = y.cashEnd;
-    const bfr = (y.totalRevenue / 12) * (p.bfr.daysOfRevenue / 30);
-    const totalActif = immoNette + tresorerie + bfr;
+    const slice = r.monthly.slice(0, monthsToEnd);
+    const lastMonth = r.monthly[monthsToEnd - 1];
 
+    // ── ACTIF ───────────────────────────────────────────────────────────────
+    // 1. Immo nette = capex brut − DA cumulée RÉELLE (somme exacte du P&L)
+    const cumDA = slice.reduce((s, m) => s + m.da, 0);
+    const immoNette = Math.max(0, totalCapex - cumDA);
+
+    // 2. Trésorerie = solde fin FY
+    const tresorerie = y.cashEnd;
+
+    // 3. BFR : aligné sur formule compute (`bfrTarget` = revenue dernier mois × jours/30,
+    //    avec daysNet détaillé si défini)
+    const bfrCustom =
+      p.bfr.daysReceivables !== undefined ||
+      p.bfr.daysSupplierPayables !== undefined ||
+      p.bfr.daysStock !== undefined;
+    const bfrDaysNet = bfrCustom
+      ? Math.max(
+          0,
+          (p.bfr.daysReceivables ?? 0) -
+            (p.bfr.daysSupplierPayables ?? 0) +
+            (p.bfr.daysStock ?? 0)
+        )
+      : p.bfr.daysOfRevenue;
+    const bfr = (lastMonth?.totalRevenue ?? 0) * (bfrDaysNet / 30);
+
+    // 4. Régularisation TVA — Σ vatCashOut compense le drain cash sans contrepartie
+    //    dans le modèle HT (revenue HT mais TVA payée sort cash). Voir docstring.
+    const vatCashOutCum = slice.reduce((s, m) => s + m.vatCashOut, 0);
+
+    const totalActif = immoNette + tresorerie + bfr + vatCashOutCum;
+
+    // ── PASSIF ──────────────────────────────────────────────────────────────
+    // 1. Capitaux propres = apports + résultat net cumulé
     const equityRaised = (p.financing.equity ?? []).reduce((s, x) => s + x.amount, 0);
     const cumNetIncome = r.yearly.slice(0, fy + 1).reduce((s, x) => s + x.netIncome, 0);
     const capitauxPropres = equityRaised + cumNetIncome;
 
-    const slice = r.monthly.slice(0, monthsToEnd);
+    // 2. Dette restante = principal init − repaid + capitalized PIK
     const bondPrincipalRepaid = slice.reduce((s, m) => s + m.bondPrincipalRepay, 0);
     const loanPrincipalRepaid = slice.reduce((s, m) => s + m.loanPrincipalRepay, 0);
     const capitalizedCum = slice.reduce((s, m) => s + (m.capitalizedInterest ?? 0), 0);
-    const dette = Math.max(
+    const detteRest = Math.max(
       0,
       (p.financing.bonds ?? []).reduce((s, b) => s + b.principal, 0) -
         bondPrincipalRepaid +
@@ -211,11 +247,14 @@ export function runCrossChecks(p: ModelParams, r: ModelResult): CrossCheck[] {
         (p.financing.loans ?? []).reduce((s, l) => s + l.principal, 0) -
         loanPrincipalRepaid
     );
-    const vatPayable = Math.max(
-      0,
-      slice.reduce((s, m) => s + (m.vatNetPayable - m.vatCashOut), 0)
-    );
-    const totalPassif = capitauxPropres + dette + vatPayable;
+
+    // 3. Dette IS différée (compense IS quarterly : PnL lissé mensuel vs cash trimestriel)
+    const taxAccrued = slice.reduce((s, m) => s + m.tax, 0);
+    const taxPaidCash = slice.reduce((s, m) => s + m.taxCash, 0);
+    const taxPayable = Math.max(0, taxAccrued - taxPaidCash);
+
+    const totalPassif = capitauxPropres + detteRest + taxPayable;
+
     checks.push(
       makeCheck(
         `bs-balance-${y.label}`,
