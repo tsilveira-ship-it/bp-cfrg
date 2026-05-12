@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { ParamNumber } from "@/components/param-input";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -23,22 +23,6 @@ type Props = {
 
 export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
   const { subs, timeline } = params;
-  // Mode expert ON par défaut — les sections Niveau 6 (cohort, courbe rétention, canaux,
-  // saisonnalité acq/churn) sont les outils principaux de modélisation. Le toggle reste
-  // disponible pour passer en mode "simple" si besoin (utilisateur novice). LocalStorage
-  // persiste la préférence : null = default true, "false" = explicitement désactivé.
-  const [expertMode, setExpertMode] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    const stored = window.localStorage.getItem("bpcfrg-expert-mode");
-    if (stored === null) return true;
-    return stored === "true";
-  });
-  const toggleExpert = (v: boolean) => {
-    setExpertMode(v);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("bpcfrg-expert-mode", String(v));
-    }
-  };
   const tl = buildTimeline(timeline.startYear, timeline.horizonYears);
   const growths = subs.growthRates ?? [];
 
@@ -188,14 +172,20 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
         </summary>
         <div className="p-3 space-y-4 border-t">
           {cohortEnabled ? (
-            <div className="text-[11px] bg-amber-50 border border-amber-300 rounded p-2">
-              <strong className="text-amber-800">Section legacy</strong> — depuis l'introduction du
-              shape <code>cohortModel.acquisitionByFy</code>, cette section ne sert qu'à 2 choses :
-              (1) rétro-compat des scénarios anciens chargés depuis Supabase, (2) seed du bouton
-              "Seed depuis cible NET" du mode cohort qui transforme <code>rampEndCount × churn</code>
-              en valeurs <code>acquisitionByFy</code>. Si tu démarres un nouveau scénario, ignore
-              cette section et travaille directement avec les acquisitions/mois par FY dans
-              <em> Mode cohort</em> ci-dessous.
+            <div className="text-[11px] bg-amber-50 border border-amber-300 rounded p-2 space-y-1">
+              <div>
+                <strong className="text-amber-800">Pas d'impact direct sur le compute</strong> —
+                en mode cohort actif, <code>compute.ts</code> ignore <code>rampStartCount</code>,
+                <code> rampEndCount</code> et <code>growthRates</code> pour la trajectoire d'abos.
+              </div>
+              <div>
+                Ces valeurs restent utilisées par : (a) le bouton <em>Seed depuis cible NET</em>
+                du mode cohort (Little's law <code>rampEndCount × churn</code>), (b) les métriques
+                dérivées d'audit (CAC implicite Y1 = budget marketing × 12 ÷ <code>rampEnd − rampStart</code>),
+                (c) le moteur de stress tests (driver <code>rampStart/rampEnd</code>). Si tu modifies
+                ces 3 valeurs, mets-les en cohérence avec ta trajectoire cohort pour que les KPIs
+                d'audit restent lisibles.
+              </div>
             </div>
           ) : (
             <div className="text-[11px] bg-amber-50 border border-amber-300 rounded p-2">
@@ -285,27 +275,8 @@ export function SubsEvolutionEditor({ params, setParams, patch }: Props) {
         </div>
       </details>
 
-      {/* Mode expert toggle — masque sections Niveau 6 par défaut pour utilisateur débutant.
-          Réduit drastiquement le bruit visuel sur /parameters quand on veut juste ajuster
-          le ramp et les growth rates. */}
-      <div className="flex items-center justify-end gap-2 border-y py-2">
-        <Label htmlFor="expert-toggle" className="text-xs text-muted-foreground">
-          Mode expert (cohort, courbe rétention, canaux, saisonnalité acq/churn, mix évolutif)
-        </Label>
-        <Switch id="expert-toggle" checked={expertMode} onCheckedChange={toggleExpert} />
-      </div>
-
-      {expertMode ? (
-        <>
-          <CohortModelSection params={params} setParams={setParams} />
-          <AdvancedSubsSection params={params} setParams={setParams} />
-        </>
-      ) : (
-        <div className="text-xs text-muted-foreground italic border border-dashed rounded p-3 text-center">
-          Mode expert désactivé — les sections Cohort + Niveau 6 sont masquées. Active le toggle
-          ci-dessus pour modéliser acquisitions brutes, courbe rétention, canaux, etc.
-        </div>
-      )}
+      <CohortModelSection params={params} setParams={setParams} />
+      <AdvancedSubsSection params={params} setParams={setParams} />
 
       <section>
         <div className="flex items-center justify-between mb-3">

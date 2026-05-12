@@ -1123,7 +1123,11 @@ export function computeModel(p: ModelParams): ModelResult {
       cashTroughValue = cash;
       cashTroughMonth = m;
     }
-    if (breakEvenMonth === null && cumulativeEbitda > 0) breakEvenMonth = m;
+    // Break-even = premier mois où l'EBITDA mensuel devient positif (>= 0).
+    // Avant fix : `cumulativeEbitda > 0` exigeait que la somme des EBITDA depuis M0
+    // repasse au-dessus de zéro — impossible dès qu'un BP a une phase d'investissement
+    // initiale significative, même si la rentabilité opérationnelle steady-state est positive.
+    if (breakEvenMonth === null && ebitda >= 0) breakEvenMonth = m;
 
     monthly.push({
       month: m,

@@ -428,7 +428,7 @@ export default function AuditPage() {
         <TabsContent value="comparison">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Comparaison Base (xlsx) vs Scénario actuel</CardTitle>
+              <CardTitle className="text-lg">Comparaison Base vs Scénario actuel</CardTitle>
               <CardDescription>Impact des modifications appliquées sur les KPIs clés</CardDescription>
             </CardHeader>
             <CardContent>

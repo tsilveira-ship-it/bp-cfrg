@@ -229,7 +229,7 @@ Project: `sivxrsztgbbcnqttgtgl` (CFRG Coach Flow)
 
 #### 22. Tests automatisés
 - Vitest setup
-- Tests unitaires `compute.ts` (cas xlsx connus)
+- Tests unitaires `compute.ts` (cas connus du modèle)
 - Snapshot tests UI critiques
 - CI GitHub Actions
 

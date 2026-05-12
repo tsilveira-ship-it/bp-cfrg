@@ -270,9 +270,12 @@ export function getPatroPct(item: SalaryItem, profiles: ChargesProfile[] | undef
 }
 
 export function monthlyEmployerCost(item: SalaryItem, profiles: ChargesProfile[] | undefined, fallbackPatro: number, indexFactor: number, fy: number): number {
-  // Brut effectif: legacy fy26Bump si défini et fy >= 1, sinon monthlyGross indexé
+  // Brut effectif: fy26Bump = valeur brut effective à partir du 1er FY du modèle (FY0 = FY26).
+  // Avant fix, la condition `fy >= 1` ignorait le bump sur FY0 (= FY26), donc la masse
+  // salariale FY26 était sous-estimée puis sautait à FY27. Sémantique corrigée : le bump
+  // s'applique sur l'ensemble de l'horizon dès qu'il est défini.
   let baseGross = item.monthlyGross;
-  if (fy >= 1 && item.fy26Bump !== undefined) baseGross = item.fy26Bump;
+  if (item.fy26Bump !== undefined) baseGross = item.fy26Bump;
   // Indexation propre au poste si définie, sinon globale
   const idx = item.annualRaisePct !== undefined
     ? Math.pow(1 + item.annualRaisePct, Math.max(0, fy - 1))

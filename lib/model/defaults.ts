@@ -324,3 +324,113 @@ export const AUDIT_CORRECTED_PARAMS: ModelParams = {
     daysOfRevenue: 15,
   },
 };
+
+/**
+ * INVESTOR_BASE — scénario viable destiné à présentation investisseur.
+ *
+ * Objectifs cibles (vs DEFAULT_PARAMS qui montre cashTrough −905k€ / breakEven=40) :
+ *   1. cashTrough ≥ 0 sur tout l'horizon (pas de rupture financière)
+ *   2. breakEven mensuel < 36 mois (EBITDA mensuel positif avant fin Y3)
+ *   3. DSCR ≥ 1 sur FY3 et au-delà (capacité service dette)
+ *   4. EBITDA Y7 ≥ 15% du CA (marge sectorielle CrossFit défendable)
+ *
+ * Construit par ajustements ciblés sur les 8 paramètres identifiés comme killers
+ * dans l'audit (cf docs/PARAM-INVENTORY.md + agent audit DEFAULT_PARAMS) :
+ *   - Mix tarif rebalancé vers premium → ARPU pondéré ~130-140€
+ *   - Tarifs revus à la hausse (alignés Reebok Louvre 169€, Train Yard 159€)
+ *   - Indexation prix + salaires 2%/an
+ *   - Marketing : mix fixe + 2% CA (croissance)
+ *   - Loyer FY27 anomalie 18113 → 13000 (à valider LOI)
+ *   - Ménage 5000 → 2500 (sur-budget vs marché Paris)
+ *   - Fiscalité activée (IS + D&A) + BFR 15j
+ *   - Equity +100k pour absorber pertes initiales
+ *   - Trajectoire membres : 60 → 230 → croissance plus modérée mais churn 2%/mo
+ *
+ * IMPORTANT : ce scénario reste en mode ramp legacy (cohortModel non activé) pour
+ * simplicité de lecture. La trajectoire net intègre déjà le churn implicitement.
+ * Pour audit défendable face VC, basculer en cohortModel ensuite via UI cohort.
+ */
+export const INVESTOR_BASE_PARAMS: ModelParams = {
+  ...DEFAULT_PARAMS,
+  subs: {
+    ...DEFAULT_PARAMS.subs,
+    tiers: [
+      // Mix rebalancé vers premium (ARPU pondéré ~138€ TTC ≈ 115€ HT)
+      { id: "ill2", name: "Abo Illimité (2 séances/j)", monthlyPrice: 180, mixPct: 0.15 },
+      { id: "ill1", name: "Abo Illimité (1 séance/j)", monthlyPrice: 150, mixPct: 0.50 },
+      { id: "s12",  name: "Abo 12 séances", monthlyPrice: 125, mixPct: 0.20 },
+      { id: "s8",   name: "Abo 8 séances", monthlyPrice: 105, mixPct: 0.10 },
+      { id: "s4",   name: "Abo 4 séances", monthlyPrice: 75,  mixPct: 0.05 },
+    ],
+    rampStartCount: 60,
+    rampEndCount: 260,
+    growthRates: [0.30, 0.22, 0.15, 0.08, 0.05, 0.03],
+    priceIndexPa: 0.02,
+    monthlyChurnPct: 0.020,
+  },
+  salaries: {
+    ...DEFAULT_PARAMS.salaries,
+    annualIndexPa: 0.02,
+  },
+  rent: {
+    ...DEFAULT_PARAMS.rent,
+    // FY27 18113 → 13000 : anomalie (+81% YoY) corrigée à hausse modérée
+    monthlyByFy: [10000, 13000, 12500, 12500, 12500, 12500, 12500],
+  },
+  recurring: DEFAULT_PARAMS.recurring.map((r) =>
+    r.id === "menage" ? { ...r, monthly: 2500 } :
+    r.id === "primesassu" ? { ...r, monthly: 0 } :  // doublon avec assu
+    r
+  ),
+  marketing: {
+    monthlyBudget: 4500,
+    indexPa: 0.0,
+    pctOfRevenue: 0.02,
+  },
+  tax: {
+    isRate: 0.25,
+    enableIs: true,
+    enableDA: true,
+    daYears: 5,
+    amortYearsEquipment: 5,
+    amortYearsTravaux: 10,
+    enableLossCarryForward: true,
+  },
+  bfr: { daysOfRevenue: 15 },
+  openingCash: 50000,
+  financing: {
+    ...DEFAULT_PARAMS.financing,
+    equity: [
+      { id: "apport_perso", name: "Apport personnel", amount: 100000, startMonth: 0 },
+      { id: "levee", name: "Levée de fonds (associés/investisseurs)", amount: 400000, startMonth: 0 },
+      // Tranche complémentaire M48 : absorbe le bond bullet M60 (capital + intérêts capitalisés)
+      // sans forcer un refinancement bancaire en urgence. Représente soit une seconde levée
+      // soit un nouveau ticket investisseur sur traction démontrée Y3-Y4.
+      { id: "tranche_b", name: "Tranche B (refinancement bond)", amount: 150000, startMonth: 48 },
+    ],
+    loans: [
+      {
+        id: "loan_bank",
+        name: "Emprunt bancaire",
+        principal: 200000,
+        annualRatePct: 4.0,  // taux 2026 réaliste vs 3% optimiste
+        termMonths: 84,
+        startMonth: 0,
+      },
+    ],
+    bonds: [
+      {
+        id: "bond_1",
+        name: "Obligation non convertible (in fine, différé capitalisé)",
+        principal: 200000,
+        annualRatePct: 8,  // marché obligations PME 2026 réaliste vs 6% optimiste
+        termYears: 5,
+        frequency: 1,
+        amortization: "bullet",
+        deferralYears: 2,
+        capitalizeInterest: true,
+        startMonth: 0,
+      },
+    ],
+  },
+};

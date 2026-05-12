@@ -4,7 +4,9 @@ import { AutoSaver } from "@/components/auto-saver";
 import { HealthBanner } from "@/components/health-banner";
 import { OnboardingWizard } from "@/components/onboarding-wizard";
 import { CommandPalette } from "@/components/command-palette";
+import { StoreSyncProvider } from "@/components/store-sync-provider";
 import { getMyRole } from "@/app/actions/access";
+import { getCurrentUser } from "@/lib/supabase/server";
 
 export default async function DashboardLayout({
   children,
@@ -18,6 +20,16 @@ export default async function DashboardLayout({
     isAdmin = false;
   }
 
+  // userId résolu côté serveur pour brancher la sync cross-device dès le mount.
+  // Si non authentifié → null → seule la sync BroadcastChannel reste active.
+  let userId: string | null = null;
+  try {
+    const user = await getCurrentUser();
+    userId = user?.id ?? null;
+  } catch {
+    userId = null;
+  }
+
   return (
     <div className="flex min-h-screen">
       <Sidebar isAdmin={isAdmin} />
@@ -29,6 +41,7 @@ export default async function DashboardLayout({
       <AutoSaver />
       <OnboardingWizard />
       <CommandPalette />
+      <StoreSyncProvider userId={userId} />
     </div>
   );
 }

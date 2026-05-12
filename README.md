@@ -24,12 +24,12 @@ Tableau de bord interactif du business plan CrossFit Rive Gauche (Sept 2025 → 
 Tout le modèle financier est dans `lib/model/`:
 
 - `types.ts` — schémas
-- `defaults.ts` — paramètres par défaut (reproduisant `Prévi_gestion - v260505.xlsx`) + version « audit corrigé »
+- `defaults.ts` — paramètres par défaut du scénario Base + version « audit corrigé »
 - `compute.ts` — moteur de calcul pur (TS, recalcul live à chaque changement de paramètre)
 
 ## Scénarios
 
-- **Base (xlsx)** — reproduction fidèle du fichier source
+- **Base** — scénario de référence du modèle
 - **Audit corrigé** — IS, D&A, BFR, indexation salaires/tarifs, marketing % CA
 - **Personnalisé** — toute modification dans `/parameters` bascule en custom
 
