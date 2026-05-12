@@ -24,6 +24,28 @@ export const DEFAULT_PARAMS: ModelParams = {
     // Saisonnalité Sept..Août. Sept et janv = pics, juillet/août = creux
     seasonality: [1.20, 1.05, 1.0, 0.85, 1.15, 1.05, 1.0, 0.95, 0.90, 0.80, 0.65, 0.60],
     monthlyChurnPct: 0.0,
+    // Funnel commercial pivot — toujours actif. Pilote le marketing P&L depuis la cible
+    // d'acquisitions (cohort.acquisitionByFy). Si cohort inactif → acquisitions = 0 et
+    // funnel inerte mais shape présent pour l'éditeur.
+    bilanFunnel: {
+      enabled: true,
+      monthlyBilansStart: 10,
+      monthlyBilansEnd: 30,
+      bilansGrowthByFy: [0.2, 0.2, 0.15, 0.10, 0.10, 0.05],
+      conversionPct: 0.45,
+      bilanPriceTTC: 19.90,
+      leadFunnel: {
+        enabled: true,
+        leadsPerAcquisition: 12,
+        callPct: 0.85,
+        pctViaBilan: 0.60,
+        freelanceHourlyRateEur: 25,
+        minutesPerLead: 8,
+        bonusPerBilanEur: 30,
+        bonusPerAboEur: 0,
+        adsBudgetMonthlyEur: 800,
+      },
+    },
   },
 
   legacy: {

@@ -1056,17 +1056,40 @@ export function normalizeParams(p: any): ModelParams {
     migratedCohort = { ...cm, acquisitionByFy };
   }
 
-  // Migration leadFunnel : ancien shape `leadsPerMonthByFy + leadToBilanPct` → nouveau
-  // shape `leadsPerAcquisition + pctViaBilan`. On dérive un ratio plat depuis l'ancien
-  // pour ne pas perdre la calibration utilisateur.
+  // Migration funnel pivot : le funnel commercial est toujours actif désormais.
+  // - Si pas de bilanFunnel → seed defaults complets (avec leadFunnel)
+  // - Si bilanFunnel sans leadFunnel → seed leadFunnel defaults, force enabled=true
+  // - Si ancien leadFunnel (leadsPerMonthByFy + leadToBilanPct) → migration shape :
+  //   leadsPerAcquisition = 1 / (callPct × leadToBilanPct × conversionPct)
   const bf = p.subs?.bilanFunnel;
-  let migratedBilanFunnel = bf;
-  if (bf && bf.leadFunnel) {
+  const DEFAULT_LEAD_FUNNEL = {
+    enabled: true,
+    leadsPerAcquisition: 12,
+    callPct: 0.85,
+    pctViaBilan: 0.60,
+    freelanceHourlyRateEur: 25,
+    minutesPerLead: 8,
+    bonusPerBilanEur: 30,
+    bonusPerAboEur: 0,
+    adsBudgetMonthlyEur: 800,
+  };
+  let migratedBilanFunnel: ModelParams["subs"]["bilanFunnel"];
+  if (!bf) {
+    migratedBilanFunnel = {
+      enabled: true,
+      monthlyBilansStart: 10,
+      monthlyBilansEnd: 30,
+      bilansGrowthByFy: [0.2, 0.2, 0.15, 0.10, 0.10, 0.05],
+      conversionPct: 0.45,
+      bilanPriceTTC: 19.9,
+      leadFunnel: DEFAULT_LEAD_FUNNEL,
+    };
+  } else if (!bf.leadFunnel) {
+    migratedBilanFunnel = { ...bf, enabled: true, leadFunnel: DEFAULT_LEAD_FUNNEL };
+  } else {
     const lf = bf.leadFunnel;
     const hasNewShape = typeof lf.leadsPerAcquisition === "number";
     if (!hasNewShape) {
-      // Calcul : conv globale = callPct × leadToBilanPct × conversionPct
-      // → leadsPerAcquisition = 1 / conv globale
       const conv =
         (lf.callPct ?? 0.85) *
         (lf.leadToBilanPct ?? 0.20) *
@@ -1074,11 +1097,20 @@ export function normalizeParams(p: any): ModelParams {
       const leadsPerAcquisition = conv > 0 ? Math.round(1 / conv) : 12;
       migratedBilanFunnel = {
         ...bf,
+        enabled: true,
         leadFunnel: {
           ...lf,
+          enabled: true,
           leadsPerAcquisition,
           pctViaBilan: 0.60,
         },
+      };
+    } else {
+      // Force toggles à true (toujours actif désormais).
+      migratedBilanFunnel = {
+        ...bf,
+        enabled: true,
+        leadFunnel: { ...lf, enabled: true },
       };
     }
   }
