@@ -373,51 +373,33 @@ function monthlySubsCount(p: ModelParams, horizonMonths: number): number[] {
 }
 
 /**
- * Niveau 6 — Funnel commercial : leads bruts mensuels (avant filtre call/conversion).
- * Saisi par FY dans `leadFunnel.leadsPerMonthByFy`. Modulé par saisonnalité acquisition
- * (réutilise celle du cohortModel si défini, sinon subs.seasonality).
- */
-export function monthlyLeads(p: ModelParams, horizonMonths: number): number[] {
-  const lf = p.subs.bilanFunnel?.leadFunnel;
-  if (!lf || !lf.enabled) return new Array(horizonMonths).fill(0);
-  const out = new Array<number>(horizonMonths).fill(0);
-  const horizonYears = Math.floor(horizonMonths / FY_LEN);
-  for (let fy = 0; fy < horizonYears; fy++) {
-    const v =
-      lf.leadsPerMonthByFy[fy] ??
-      lf.leadsPerMonthByFy[lf.leadsPerMonthByFy.length - 1] ??
-      0;
-    for (let i = 0; i < FY_LEN; i++) {
-      const m = fy * FY_LEN + i;
-      if (m < horizonMonths) out[m] = v;
-    }
-  }
-  // Saisonnalité acquisition (réutilise priorité globale)
-  const seasonality =
-    (p.subs.seasonalityAcquisition && p.subs.seasonalityAcquisition.length === 12
-      ? p.subs.seasonalityAcquisition
-      : p.subs.cohortModel?.acquisitionSeasonality &&
-        p.subs.cohortModel.acquisitionSeasonality.length === 12
-      ? p.subs.cohortModel.acquisitionSeasonality
-      : p.subs.seasonality && p.subs.seasonality.length === 12
-      ? p.subs.seasonality
-      : null);
-  if (seasonality) {
-    for (let m = 0; m < horizonMonths; m++) out[m] = out[m] * seasonality[m % FY_LEN];
-  }
-  return out;
-}
-
-/**
- * Niveau 6 — Décomposition funnel mensuelle : leads → appels → bilans → acquisitions,
- * + coûts détaillés (heures freelance, taux horaire × heures, bonus bilan, bonus abo,
- * budget ads, revenu bilans). Utilisé par UI (preview live) et compute marketing P&L.
+ * Niveau 6 — Décomposition funnel mensuelle inversée : on part des ACQUISITIONS cibles
+ * (saisies dans `cohortModel.acquisitionByFy`) et on back-calcule:
+ *   leads[m]   = acquisitions[m] × leadsPerAcquisition
+ *   appels[m]  = leads[m] × callPct
+ *   bilans[m]  = acquisitions[m] × pctViaBilan
+ *   direct[m]  = acquisitions[m] × (1 − pctViaBilan)
+ *
+ * Coûts:
+ *   freelance horaire = appels × (minutesPerLead / 60) × hourlyRate
+ *   bonus bilan       = bilans × bonusPerBilanEur
+ *   bonus abo         = acquisitions × bonusPerAboEur
+ *   ads               = adsBudgetMonthlyEur × (1 + indexPa)^fy
+ *
+ * Total marketing = freelance + bonusBilan + bonusAbo + ads
+ * Net marketing   = total − revenuBilanHT (le bilan paie partiellement le coût acquisition)
+ *
+ * Cohérent avec l'approche "objectif → besoins" : l'utilisateur saisit sa cible mensuelle
+ * d'abos via `acquisitionByFy`, puis dimensionne le funnel commercial nécessaire pour
+ * l'atteindre. Plus défendable face à un investisseur ("pour 8 abos/mois il faut 100 leads,
+ * 85 appels = 11h freelance, etc.") que l'inverse.
  */
 export type FunnelStep = {
-  leads: number;
-  appels: number;
-  bilans: number;
-  acquisitions: number;
+  acquisitions: number;       // INPUT (depuis cohort acquisitionByFy)
+  leads: number;              // = acquisitions × leadsPerAcquisition
+  appels: number;             // = leads × callPct
+  bilans: number;             // = acquisitions × pctViaBilan
+  directSignups: number;      // = acquisitions × (1 − pctViaBilan)
   hoursFreelance: number;
   costFreelanceHourly: number;
   costBonusBilan: number;
@@ -430,7 +412,7 @@ export type FunnelStep = {
 
 export function monthlyFunnel(p: ModelParams, horizonMonths: number): FunnelStep[] {
   const out: FunnelStep[] = new Array(horizonMonths).fill(null).map(() => ({
-    leads: 0, appels: 0, bilans: 0, acquisitions: 0,
+    acquisitions: 0, leads: 0, appels: 0, bilans: 0, directSignups: 0,
     hoursFreelance: 0, costFreelanceHourly: 0, costBonusBilan: 0, costBonusAbo: 0,
     costAds: 0, totalCost: 0, revenuBilanHT: 0, netMarketing: 0,
   }));
@@ -438,28 +420,32 @@ export function monthlyFunnel(p: ModelParams, horizonMonths: number): FunnelStep
   const lf = bf?.leadFunnel;
   if (!bf || !lf || !bf.enabled || !lf.enabled) return out;
 
-  const leads = monthlyLeads(p, horizonMonths);
+  // Acquisitions cible depuis le mode cohort (acquisitionByFy × saisonnalité)
+  const acquisitions = monthlyAcquisitionsFromCohort(p, horizonMonths);
   const vatDivisor = 1 + (p.subs.vatRate ?? 0);
   const bilanPriceHT = bf.bilanPriceTTC / vatDivisor;
   const indexPa = p.marketing.indexPa ?? 0;
+  const pctViaBilan = Math.max(0, Math.min(1, lf.pctViaBilan));
+  const leadsPerAcq = Math.max(0, lf.leadsPerAcquisition);
 
   for (let m = 0; m < horizonMonths; m++) {
     const fy = Math.floor(m / FY_LEN);
     const adsIndex = Math.pow(1 + indexPa, fy);
-    const l = leads[m];
-    const appels = l * lf.callPct;
-    const bilans = appels * lf.leadToBilanPct;
-    const acquisitions = bilans * bf.conversionPct;
+    const a = acquisitions[m];
+    const leads = a * leadsPerAcq;
+    const appels = leads * lf.callPct;
+    const bilans = a * pctViaBilan;
+    const directSignups = a * (1 - pctViaBilan);
     const hoursFreelance = appels * (lf.minutesPerLead / 60);
     const costFreelanceHourly = hoursFreelance * lf.freelanceHourlyRateEur;
     const costBonusBilan = bilans * (lf.bonusPerBilanEur ?? 0);
-    const costBonusAbo = acquisitions * (lf.bonusPerAboEur ?? 0);
+    const costBonusAbo = a * (lf.bonusPerAboEur ?? 0);
     const costAds = lf.adsBudgetMonthlyEur * adsIndex;
     const totalCost = costFreelanceHourly + costBonusBilan + costBonusAbo + costAds;
     const revenuBilanHT = bilans * bilanPriceHT;
     const netMarketing = totalCost - revenuBilanHT;
     out[m] = {
-      leads: l, appels, bilans, acquisitions,
+      acquisitions: a, leads, appels, bilans, directSignups,
       hoursFreelance, costFreelanceHourly, costBonusBilan, costBonusAbo,
       costAds, totalCost, revenuBilanHT, netMarketing,
     };
@@ -468,8 +454,32 @@ export function monthlyFunnel(p: ModelParams, horizonMonths: number): FunnelStep
 }
 
 /**
+ * Helper interne — acquisitions cibles depuis cohort uniquement (acquisitionByFy ou ramp
+ * legacy), modulé par saisonnalité acquisition. Évite l'aller-retour
+ * `monthlyAcquisitions` (qui pourrait passer par bilanFunnel.conversionPct legacy si
+ * leadFunnel inactif — pas ce qu'on veut ici).
+ */
+function monthlyAcquisitionsFromCohort(p: ModelParams, horizonMonths: number): number[] {
+  const cm = p.subs.cohortModel;
+  if (!cm) return new Array(horizonMonths).fill(0);
+  const acq = buildBaseAcquisitions(p, horizonMonths);
+  const seasonality =
+    (p.subs.seasonalityAcquisition && p.subs.seasonalityAcquisition.length === 12
+      ? p.subs.seasonalityAcquisition
+      : cm.acquisitionSeasonality && cm.acquisitionSeasonality.length === 12
+      ? cm.acquisitionSeasonality
+      : p.subs.seasonality && p.subs.seasonality.length === 12
+      ? p.subs.seasonality
+      : null);
+  if (seasonality) {
+    for (let m = 0; m < horizonMonths; m++) acq[m] = acq[m] * seasonality[m % FY_LEN];
+  }
+  return acq;
+}
+
+/**
  * Niveau 5 — Construction de la trajectoire mensuelle bilans payés.
- * Si `bilanFunnel.leadFunnel.enabled` → bilans dérivés du funnel (leads × call × leadToBilan).
+ * Si `bilanFunnel.leadFunnel.enabled` → bilans = acquisitions × pctViaBilan (mode pivot).
  * Sinon → trajectoire ramp legacy `monthlyBilansStart` → `End` + croissance FY.
  */
 export function monthlyBilansPaid(p: ModelParams, horizonMonths: number): number[] {
@@ -533,9 +543,16 @@ export function monthlyBilanRevenue(p: ModelParams, horizonMonths: number): numb
 export function monthlyAcquisitions(p: ModelParams, horizonMonths: number): number[] {
   const churn = p.subs.monthlyChurnPct ?? 0;
   const useCohort = p.subs.cohortModel?.enabled === true;
-
-  // Niveau 5 : bilan funnel override
   const bf = p.subs.bilanFunnel;
+  const lfActive = bf?.leadFunnel?.enabled === true && bf.enabled === true;
+
+  // Mode pivot : si leadFunnel actif, acquisitions = cohort (acquisitionByFy × saison).
+  // Le bilan funnel.conversionPct legacy n'est plus utilisé pour piloter le compte.
+  if (useCohort && lfActive) {
+    return monthlyAcquisitionsFromCohort(p, horizonMonths);
+  }
+
+  // Mode legacy bilan funnel : acquisitions = bilans (ramp) × conversionPct
   if (useCohort && bf?.enabled) {
     const bilans = monthlyBilansPaid(p, horizonMonths);
     return bilans.map((b) => b * bf.conversionPct);

@@ -1510,17 +1510,19 @@ function LeadFunnelEditor({
             ...p.subs,
             bilanFunnel: {
               ...existing,
-              leadFunnel: existing.leadFunnel ?? {
-                enabled: true,
-                leadsPerMonthByFy: new Array(horizonYears).fill(100).map((v, i) => v + i * 20),
-                callPct: 0.85,
-                leadToBilanPct: 0.20,
-                freelanceHourlyRateEur: 25,
-                minutesPerLead: 8,
-                bonusPerBilanEur: 30,
-                bonusPerAboEur: 0,
-                adsBudgetMonthlyEur: 800,
-              },
+              leadFunnel: existing.leadFunnel
+                ? { ...existing.leadFunnel, enabled: true }
+                : {
+                    enabled: true,
+                    leadsPerAcquisition: 12,
+                    callPct: 0.85,
+                    pctViaBilan: 0.60,
+                    freelanceHourlyRateEur: 25,
+                    minutesPerLead: 8,
+                    bonusPerBilanEur: 30,
+                    bonusPerAboEur: 0,
+                    adsBudgetMonthlyEur: 800,
+                  },
             },
           },
         };
@@ -1581,36 +1583,32 @@ function LeadFunnelEditor({
 
       {enabled && lf ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Colonne saisie */}
+          {/* Colonne saisie — pivot : cible acquisitions = INPUT cohort, back-calc des leads */}
           <div className="space-y-3">
-            <div>
-              <Label className="text-xs mb-1 block">Leads bruts/mois par FY</Label>
-              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-1">
-                {Array.from({ length: horizonYears }, (_, fy) => (
-                  <div key={fy}>
-                    <Label className="text-[9px] text-muted-foreground">{fyLabels[fy]}</Label>
-                    <Input
-                      type="number"
-                      step="5"
-                      value={
-                        lf.leadsPerMonthByFy[fy] ??
-                        lf.leadsPerMonthByFy[lf.leadsPerMonthByFy.length - 1] ??
-                        0
-                      }
-                      onChange={(e) => {
-                        const arr = [...lf.leadsPerMonthByFy];
-                        while (arr.length < horizonYears) arr.push(arr[arr.length - 1] ?? 0);
-                        arr[fy] = parseFloat(e.target.value) || 0;
-                        update({ leadsPerMonthByFy: arr });
-                      }}
-                      className="h-7 text-[10px] text-center"
-                    />
-                  </div>
-                ))}
-              </div>
+            <div className="text-[10px] p-2 bg-amber-50 border border-amber-200 rounded text-amber-900">
+              <strong>Mode pivot</strong> — les acquisitions/mois sont saisies dans le tableau{" "}
+              <em>Acquisitions par FY</em> du Mode cohort ci-dessus. Le funnel back-calcule les
+              leads et coûts nécessaires pour atteindre cette cible.
             </div>
 
             <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-[10px]">Leads / acquisition (ratio)</Label>
+                <Input
+                  type="number"
+                  step="1"
+                  min="1"
+                  value={lf.leadsPerAcquisition}
+                  onChange={(e) =>
+                    update({ leadsPerAcquisition: Math.max(1, parseFloat(e.target.value) || 1) })
+                  }
+                  className="h-8 text-xs"
+                />
+                <p className="text-[9px] text-muted-foreground mt-0.5">
+                  Conv globale = {((1 / Math.max(1, lf.leadsPerAcquisition)) * 100).toFixed(1)}%.
+                  Typique : 8-15 leads/abo.
+                </p>
+              </div>
               <div>
                 <Label className="text-[10px]">% leads appelés</Label>
                 <div className="relative">
@@ -1628,27 +1626,31 @@ function LeadFunnelEditor({
                   </span>
                 </div>
                 <p className="text-[9px] text-muted-foreground mt-0.5">
-                  Default 85% (15% non joignables)
+                  85% typique (15% non joignables)
                 </p>
               </div>
-              <div>
-                <Label className="text-[10px]">% appel → bilan</Label>
-                <div className="relative">
-                  <Input
-                    type="number"
-                    step="1"
-                    value={(lf.leadToBilanPct * 100).toFixed(0)}
-                    onChange={(e) =>
-                      update({ leadToBilanPct: (parseFloat(e.target.value) || 0) / 100 })
-                    }
-                    className="h-8 text-xs pr-6"
-                  />
-                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
-                    %
-                  </span>
-                </div>
-                <p className="text-[9px] text-muted-foreground mt-0.5">15-25% typique</p>
+            </div>
+
+            <div>
+              <Label className="text-[10px]">% acquisitions via Bilan (vs direct)</Label>
+              <div className="relative">
+                <Input
+                  type="number"
+                  step="5"
+                  value={(lf.pctViaBilan * 100).toFixed(0)}
+                  onChange={(e) =>
+                    update({ pctViaBilan: (parseFloat(e.target.value) || 0) / 100 })
+                  }
+                  className="h-8 text-xs pr-6"
+                />
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
+                  %
+                </span>
               </div>
+              <p className="text-[9px] text-muted-foreground mt-0.5">
+                Part des abos signés après un bilan 19,90€ (le reste signe directement).
+                60% typique = 60% bilans + 40% direct.
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
@@ -1735,29 +1737,38 @@ function LeadFunnelEditor({
                   Aperçu FY0 ({annualByFy[0].label}) — mensuel moyen
                 </div>
                 <div className="rounded border bg-background p-2.5 space-y-1 text-[11px] font-mono">
-                  <FunnelRow label="Leads" value={`${(annualByFy[0].leads / 12).toFixed(0)} /mois`} />
-                  <FunnelRow label="↓ × call %" value={`× ${(lf.callPct * 100).toFixed(0)}%`} dim />
-                  <FunnelRow label="Appels" value={`${(annualByFy[0].appels / 12).toFixed(0)} /mois`} />
+                  <FunnelRow
+                    label="Acquisitions (cible)"
+                    value={`${(annualByFy[0].acquisitions / 12).toFixed(1)} /mois`}
+                    accent
+                  />
+                  <FunnelRow
+                    label={`↑ × ${lf.leadsPerAcquisition} leads/abo`}
+                    value=""
+                    dim
+                  />
+                  <FunnelRow label="Leads nécessaires" value={`${(annualByFy[0].leads / 12).toFixed(0)} /mois`} />
+                  <FunnelRow
+                    label={`× ${(lf.callPct * 100).toFixed(0)}% appelés`}
+                    value=""
+                    dim
+                  />
+                  <FunnelRow label="Appels effectifs" value={`${(annualByFy[0].appels / 12).toFixed(0)} /mois`} />
                   <div className="text-[10px] text-muted-foreground pl-3">
                     → {(annualByFy[0].hours / 12).toFixed(1)} h freelance/mois (
                     {(annualByFy[0].hours / 12 / 137).toFixed(2)} FTE)
                   </div>
-                  <FunnelRow
-                    label="↓ × conv bilan"
-                    value={`× ${(lf.leadToBilanPct * 100).toFixed(0)}%`}
-                    dim
-                  />
-                  <FunnelRow label="Bilans" value={`${(annualByFy[0].bilans / 12).toFixed(1)} /mois`} />
-                  <FunnelRow
-                    label={`↓ × conv abo (${((bf?.conversionPct ?? 0) * 100).toFixed(0)}%)`}
-                    value=""
-                    dim
-                  />
-                  <FunnelRow
-                    label="Acquisitions"
-                    value={`${(annualByFy[0].acquisitions / 12).toFixed(1)} /mois`}
-                    accent
-                  />
+                  <div className="border-t pt-1 mt-1">
+                    <FunnelRow
+                      label={`Bilans (${(lf.pctViaBilan * 100).toFixed(0)}% via bilan)`}
+                      value={`${(annualByFy[0].bilans / 12).toFixed(1)} /mois`}
+                    />
+                    <FunnelRow
+                      label={`Direct (${((1 - lf.pctViaBilan) * 100).toFixed(0)}% sans bilan)`}
+                      value={`${(((annualByFy[0].acquisitions - annualByFy[0].bilans) / 12)).toFixed(1)} /mois`}
+                      dim
+                    />
+                  </div>
                 </div>
                 <div className="rounded border bg-background p-2.5 space-y-1 text-[11px] font-mono">
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">

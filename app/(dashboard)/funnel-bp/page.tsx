@@ -131,10 +131,10 @@ export default function FunnelBpPage() {
   const minutesPerLead = lf.minutesPerLead;
   const hourlyRate = lf.freelanceHourlyRateEur;
   const callPct = lf.callPct;
-  const leadToBilan = lf.leadToBilanPct;
-  const conversionPct = bf.conversionPct;
+  const pctViaBilan = lf.pctViaBilan;
+  const leadsPerAcq = lf.leadsPerAcquisition;
   const adsBudget = lf.adsBudgetMonthlyEur;
-  const totalConvPct = callPct * leadToBilan * conversionPct;
+  const totalConvPct = leadsPerAcq > 0 ? 1 / leadsPerAcq : 0;
 
   return (
     <div className="space-y-6">
@@ -195,9 +195,9 @@ export default function FunnelBpPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <HypRow label="Leads / acquisition" value={`${leadsPerAcq} leads`} />
             <HypRow label="% leads appelés" value={fmtPct(callPct, 0)} />
-            <HypRow label="% appel → bilan" value={fmtPct(leadToBilan, 0)} />
-            <HypRow label="% bilan → abo" value={fmtPct(conversionPct, 0)} />
+            <HypRow label="% via bilan" value={fmtPct(pctViaBilan, 0)} />
             <HypRow
               label="Conv. globale lead → abo"
               value={fmtPct(totalConvPct, 1)}
@@ -309,7 +309,7 @@ export default function FunnelBpPage() {
           {annual[0] ? (
             <div className="space-y-2 max-w-2xl mx-auto">
               <FunnelBar
-                label="Leads bruts"
+                label="Leads bruts (nécessaires)"
                 count={annual[0].leads}
                 max={annual[0].leads}
                 color="bg-blue-500"
@@ -322,19 +322,24 @@ export default function FunnelBpPage() {
                 pct={callPct}
               />
               <FunnelBar
-                label="Bilans signés"
-                count={annual[0].bilans}
-                max={annual[0].leads}
-                color="bg-amber-500"
-                pct={leadToBilan}
-              />
-              <FunnelBar
-                label="Abonnements signés"
+                label="Acquisitions (cible)"
                 count={annual[0].acquisitions}
                 max={annual[0].leads}
                 color="bg-emerald-600"
-                pct={conversionPct}
+                pct={1 / leadsPerAcq}
                 accent
+              />
+              <FunnelBar
+                label={`└ dont via bilan (${(pctViaBilan * 100).toFixed(0)}%)`}
+                count={annual[0].bilans}
+                max={annual[0].leads}
+                color="bg-amber-500"
+              />
+              <FunnelBar
+                label={`└ dont signatures directes`}
+                count={annual[0].acquisitions - annual[0].bilans}
+                max={annual[0].leads}
+                color="bg-slate-400"
               />
               <div className="text-xs text-muted-foreground text-center mt-3 italic">
                 Conversion globale lead → abo : {fmtPct(totalConvPct, 1)} (

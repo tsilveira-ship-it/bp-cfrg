@@ -441,12 +441,20 @@ export type ModelParams = {
        */
       leadFunnel?: {
         enabled: boolean;
-        /** Leads bruts entrants/mois par FY (length = horizonYears). */
-        leadsPerMonthByFy: number[];
+        /**
+         * Nombre de leads bruts nécessaires pour 1 acquisition (back-calc depuis la cible).
+         * Ex: 12 = il faut 12 leads en haut du funnel pour signer 1 abo. Combine taux call,
+         * conversion bilan, et conversion abo en un seul ratio simple à calibrer.
+         * Conversion globale lead → abo = 1 / leadsPerAcquisition. Default 12.
+         */
+        leadsPerAcquisition: number;
         /** % leads effectivement appelés par le freelance (0..1). Default 0.85. */
         callPct: number;
-        /** Taux conversion appel → bilan signé (0..1). Default 0.20. */
-        leadToBilanPct: number;
+        /**
+         * % des acquisitions qui passent par la case bilan (vs signature directe sans bilan).
+         * Default 0.60 (60% via bilan, 40% direct). Le reste génère un revenu bilan + bonus.
+         */
+        pctViaBilan: number;
         /** Taux horaire freelance commercial (€/h). Default 25. */
         freelanceHourlyRateEur: number;
         /** Temps moyen par appel (minutes, inclut tentatives + rappels). Default 8. */
@@ -457,6 +465,16 @@ export type ModelParams = {
         bonusPerAboEur?: number;
         /** Budget ads mensuel qui génère les leads (€). Indexé par `marketing.indexPa`. */
         adsBudgetMonthlyEur: number;
+        /**
+         * @deprecated — ancien shape : leads en input direct (avant pivot vers acquisitions
+         * cible). Conservé pour migration ascendante des scénarios anciens.
+         */
+        leadsPerMonthByFy?: number[];
+        /**
+         * @deprecated — ancien shape : taux conversion appel→bilan. Remplacé par
+         * `leadsPerAcquisition` (ratio inverse plus simple).
+         */
+        leadToBilanPct?: number;
       };
     };
     /**
@@ -1038,6 +1056,33 @@ export function normalizeParams(p: any): ModelParams {
     migratedCohort = { ...cm, acquisitionByFy };
   }
 
+  // Migration leadFunnel : ancien shape `leadsPerMonthByFy + leadToBilanPct` → nouveau
+  // shape `leadsPerAcquisition + pctViaBilan`. On dérive un ratio plat depuis l'ancien
+  // pour ne pas perdre la calibration utilisateur.
+  const bf = p.subs?.bilanFunnel;
+  let migratedBilanFunnel = bf;
+  if (bf && bf.leadFunnel) {
+    const lf = bf.leadFunnel;
+    const hasNewShape = typeof lf.leadsPerAcquisition === "number";
+    if (!hasNewShape) {
+      // Calcul : conv globale = callPct × leadToBilanPct × conversionPct
+      // → leadsPerAcquisition = 1 / conv globale
+      const conv =
+        (lf.callPct ?? 0.85) *
+        (lf.leadToBilanPct ?? 0.20) *
+        (bf.conversionPct ?? 0.45);
+      const leadsPerAcquisition = conv > 0 ? Math.round(1 / conv) : 12;
+      migratedBilanFunnel = {
+        ...bf,
+        leadFunnel: {
+          ...lf,
+          leadsPerAcquisition,
+          pctViaBilan: 0.60,
+        },
+      };
+    }
+  }
+
   return {
     ...p,
     timeline,
@@ -1046,6 +1091,7 @@ export function normalizeParams(p: any): ModelParams {
       vatRate: p.subs?.vatRate ?? 0.20,
       growthRates,
       cohortModel: migratedCohort,
+      bilanFunnel: migratedBilanFunnel,
     },
     rent: {
       ...p.rent,
