@@ -80,10 +80,22 @@ export default function SalariesPage() {
       if (it.endMonth !== undefined && mi > it.endMonth) continue;
       cadres += monthlyEmployerCost(it, profiles, params.salaries.chargesPatroPct, idxF, fy);
     }
+    // Source heures freelance alignée sur compute.monthlySalaries :
+    // capacity.coachAllocations en priorité, sinon legacy pool.monthlyHours.
+    const allocs = params.capacity?.coachAllocations ?? [];
+    const hasFreelanceAlloc = allocs.some((a) => a.coachKind === "freelance");
     let freelance = 0;
     for (const pool of pools) {
       if (pool.startMonth !== undefined && mi < pool.startMonth) continue;
-      freelance += pool.hourlyRate * effectiveMonthlyHours(pool) * idxF;
+      let hours: number;
+      if (hasFreelanceAlloc) {
+        hours = allocs
+          .filter((a) => a.coachKind === "freelance" && a.coachId === pool.id && a.fy === fy)
+          .reduce((s, a) => s + a.hoursPerMonth, 0);
+      } else {
+        hours = effectiveMonthlyHours(pool);
+      }
+      freelance += pool.hourlyRate * hours * idxF;
     }
     return { label: m.label, Cadres: cadres, Freelance: freelance };
   });
@@ -480,7 +492,44 @@ export default function SalariesPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="freelance">
+        <TabsContent value="freelance" className="space-y-3">
+          {(() => {
+            const allocs = params.capacity?.coachAllocations ?? [];
+            const hasFreelanceAlloc = allocs.some((a) => a.coachKind === "freelance");
+            return (
+              <div
+                className={
+                  "rounded-md border p-3 text-xs " +
+                  (hasFreelanceAlloc
+                    ? "border-emerald-300 bg-emerald-50"
+                    : "border-amber-300 bg-amber-50")
+                }
+              >
+                {hasFreelanceAlloc ? (
+                  <>
+                    <strong className="text-emerald-900">
+                      Heures pilotées depuis /capacity-planner
+                    </strong>{" "}
+                    — la masse salariale freelance utilise les heures saisies dans la section
+                    « Allocation coachs » (par FY). Le champ <code>monthlyHours</code> ci-dessous
+                    devient indicatif (legacy). Pour modifier les heures effectives utilisées par
+                    le P&amp;L, va dans <a href="/capacity-planner" className="underline">
+                      /capacity-planner
+                    </a>.
+                  </>
+                ) : (
+                  <>
+                    <strong className="text-amber-900">Mode legacy (heures pool)</strong> —
+                    aucune allocation freelance définie dans /capacity-planner. Le P&amp;L
+                    utilise <code>monthlyHours</code> de chaque pool ci-dessous. Pour piloter
+                    finement par FY (recommandé Master V12+), configure les allocations dans{" "}
+                    <a href="/capacity-planner" className="underline">/capacity-planner</a> →
+                    section « Allocation coachs ».
+                  </>
+                )}
+              </div>
+            );
+          })()}
           <FreelancePoolsEditor />
         </TabsContent>
 

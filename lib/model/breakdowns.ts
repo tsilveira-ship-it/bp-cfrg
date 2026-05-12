@@ -37,13 +37,28 @@ export function salariesBreakdown(p: ModelParams): YearlyBreakdownRow[] {
     out.push({ id: `salary-${item.id}`, label: item.role, values });
   }
 
+  // Source heures freelance — alignée sur compute.monthlySalaries :
+  // capacity.coachAllocations en priorité (Master V12+), sinon legacy pool.monthlyHours.
+  const allocations = p.capacity?.coachAllocations ?? [];
+  const hasFreelanceAlloc = allocations.some((a) => a.coachKind === "freelance");
+  const hoursByFyPool = new Map<string, number>();
+  if (hasFreelanceAlloc) {
+    for (const a of allocations) {
+      if (a.coachKind !== "freelance") continue;
+      const k = `${a.fy}|${a.coachId}`;
+      hoursByFyPool.set(k, (hoursByFyPool.get(k) ?? 0) + a.hoursPerMonth);
+    }
+  }
   for (const pool of p.salaries.freelancePools ?? []) {
     const values = new Array<number>(years(p)).fill(0);
     for (let m = 0; m < H; m++) {
       if (pool.startMonth !== undefined && m < pool.startMonth) continue;
       const fy = Math.floor(m / FY_LEN);
       const idx = Math.pow(1 + p.salaries.annualIndexPa, Math.max(0, fy - 1));
-      values[fy] += pool.hourlyRate * effectiveMonthlyHours(pool) * idx;
+      const hours = hasFreelanceAlloc
+        ? hoursByFyPool.get(`${fy}|${pool.id}`) ?? 0
+        : effectiveMonthlyHours(pool);
+      values[fy] += pool.hourlyRate * hours * idx;
     }
     out.push({ id: `pool-${pool.id}`, label: `${pool.name} (freelance)`, values });
   }

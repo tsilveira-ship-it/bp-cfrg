@@ -822,6 +822,21 @@ function monthlySalaries(p: ModelParams, horizonMonths: number): number[] {
   const out = new Array<number>(horizonMonths).fill(0);
   const pools = p.salaries.freelancePools ?? [];
   const profiles = p.salaries.chargesProfiles;
+  // Source des heures freelance : si `capacity.coachAllocations` défini avec au moins une
+  // alloc freelance, on utilise les heures allouées par FY (structure Master V12+).
+  // Sinon fallback `pool.monthlyHours` legacy. Permet de piloter la masse salariale
+  // freelance depuis le capacity-planner au lieu d'une valeur statique sur le pool.
+  const allocations = p.capacity?.coachAllocations ?? [];
+  const hasFreelanceAlloc = allocations.some((a) => a.coachKind === "freelance");
+  // Pré-calcul pour perf : map(fy, poolId) → heures allouées (somme si plusieurs lignes).
+  const hoursByFyPool = new Map<string, number>();
+  if (hasFreelanceAlloc) {
+    for (const a of allocations) {
+      if (a.coachKind !== "freelance") continue;
+      const k = `${a.fy}|${a.coachId}`;
+      hoursByFyPool.set(k, (hoursByFyPool.get(k) ?? 0) + a.hoursPerMonth);
+    }
+  }
   for (let m = 0; m < horizonMonths; m++) {
     const fy = Math.floor(m / FY_LEN);
     const idx = Math.pow(1 + p.salaries.annualIndexPa, Math.max(0, fy - 1));
@@ -833,7 +848,17 @@ function monthlySalaries(p: ModelParams, horizonMonths: number): number[] {
     }
     for (const pool of pools) {
       if (pool.startMonth !== undefined && m < pool.startMonth) continue;
-      total += pool.hourlyRate * effectiveMonthlyHours(pool) * idx;
+      // Priorité allocations capacity-planner sur la valeur legacy pool.monthlyHours.
+      // Si une alloc existe pour ce pool/FY, on l'utilise (somme des heures lignes).
+      // Sinon fallback effectiveMonthlyHours(pool). Si allocations existent globalement
+      // mais pas pour ce pool sur ce FY → 0 (signifie "pas alloué").
+      let hours: number;
+      if (hasFreelanceAlloc) {
+        hours = hoursByFyPool.get(`${fy}|${pool.id}`) ?? 0;
+      } else {
+        hours = effectiveMonthlyHours(pool);
+      }
+      total += pool.hourlyRate * hours * idx;
     }
     out[m] = total;
   }
