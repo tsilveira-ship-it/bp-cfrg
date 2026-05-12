@@ -1081,27 +1081,8 @@ function BilanFunnelEditor({
 
       {enabled && bf ? (
         <>
+          {/* Prix bilan : toujours utile (revenu HT par bilan, modes pivot ET legacy). */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <Label className="text-[10px]">Bilans/mois début FY26</Label>
-              <Input
-                type="number"
-                step="1"
-                value={bf.monthlyBilansStart}
-                onChange={(e) => update({ monthlyBilansStart: parseFloat(e.target.value) || 0 })}
-                className="h-8 text-xs"
-              />
-            </div>
-            <div>
-              <Label className="text-[10px]">Bilans/mois fin FY26</Label>
-              <Input
-                type="number"
-                step="1"
-                value={bf.monthlyBilansEnd}
-                onChange={(e) => update({ monthlyBilansEnd: parseFloat(e.target.value) || 0 })}
-                className="h-8 text-xs"
-              />
-            </div>
             <div>
               <Label className="text-[10px]">Prix Bilan TTC (€)</Label>
               <Input
@@ -1111,76 +1092,133 @@ function BilanFunnelEditor({
                 onChange={(e) => update({ bilanPriceTTC: parseFloat(e.target.value) || 0 })}
                 className="h-8 text-xs"
               />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <Label className="text-[10px]">Conversion bilan → abo (%)</Label>
-              <div className="relative">
-                <Input
-                  type="number"
-                  step="0.5"
-                  value={(bf.conversionPct * 100).toFixed(1)}
-                  onChange={(e) =>
-                    update({ conversionPct: (parseFloat(e.target.value) || 0) / 100 })
-                  }
-                  className="h-8 text-xs pr-6"
-                />
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
-                  %
-                </span>
-              </div>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                Dashboard CRM live : ~45% (cible). Ajuster selon donnée réelle.
+              <p className="text-[9px] text-muted-foreground mt-0.5">
+                Revenu HT par bilan = TTC / (1 + TVA). Recouvre partiellement le coût marketing.
               </p>
             </div>
-            <div>
-              <Label className="text-[10px] mb-1.5 block">
-                Croissance annuelle bilans (FY27 →)
-              </Label>
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
-                {bf.bilansGrowthByFy.map((g, idx) => (
-                  <div key={idx}>
-                    <Label className="text-[9px] text-muted-foreground">FY{27 + idx}</Label>
-                    <div className="relative">
-                      <Input
-                        type="number"
-                        step={1}
-                        value={(g * 100).toFixed(1).replace(/\.0$/, "")}
-                        onChange={(e) =>
-                          update({
-                            bilansGrowthByFy: bf.bilansGrowthByFy.map((x, i) =>
-                              i === idx ? (parseFloat(e.target.value) || 0) / 100 : x
-                            ),
-                          })
-                        }
-                        className="h-7 text-[10px] pr-5"
-                      />
-                      <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground">
-                        %
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-[10px] bg-background border rounded p-2">
-            <div>
-              <div className="text-muted-foreground">Acquisitions M0</div>
-              <div className="font-mono font-semibold">{startAcq.toFixed(1)}/mo</div>
+          {/* Champs legacy (ramp bilan + conversion) — collapsed quand mode pivot actif.
+              En mode pivot : bilans = acquisitions × pctViaBilan (saisi dans LeadFunnelEditor),
+              conversionPct n'est plus utilisé pour piloter le compte d'acquisitions. */}
+          <details
+            open={bf.leadFunnel?.enabled !== true}
+            className="border border-dashed rounded-md"
+          >
+            <summary className="cursor-pointer p-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:bg-muted/30">
+              Mode legacy bilan ramp{" "}
+              {bf.leadFunnel?.enabled === true
+                ? "(remplacé par funnel pivot ci-dessous — section ignorée par le moteur)"
+                : "(actif — bilans pilotent acquisitions via conversionPct)"}
+            </summary>
+            <div className="p-3 space-y-3 border-t">
+              {bf.leadFunnel?.enabled === true ? (
+                <div className="text-[11px] bg-amber-50 border border-amber-200 rounded p-2 text-amber-900">
+                  <strong>Section dépréciée</strong> — depuis l'activation du Funnel pivot
+                  (ci-dessous), les bilans sont dérivés automatiquement de la cible acquisitions
+                  via <code>pctViaBilan</code>. Les champs ramp (<code>monthlyBilansStart/End</code>),
+                  <code>conversionPct</code>, <code>bilansGrowthByFy</code> ne pilotent plus rien.
+                  Conservés pour rétro-compat scénarios anciens et bascule possible en mode legacy.
+                </div>
+              ) : null}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-[10px]">Bilans/mois début FY26</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    value={bf.monthlyBilansStart}
+                    onChange={(e) => update({ monthlyBilansStart: parseFloat(e.target.value) || 0 })}
+                    className="h-8 text-xs"
+                    disabled={bf.leadFunnel?.enabled === true}
+                  />
+                </div>
+                <div>
+                  <Label className="text-[10px]">Bilans/mois fin FY26</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    value={bf.monthlyBilansEnd}
+                    onChange={(e) => update({ monthlyBilansEnd: parseFloat(e.target.value) || 0 })}
+                    className="h-8 text-xs"
+                    disabled={bf.leadFunnel?.enabled === true}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-[10px]">Conversion bilan → abo (%)</Label>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      step="0.5"
+                      value={(bf.conversionPct * 100).toFixed(1)}
+                      onChange={(e) =>
+                        update({ conversionPct: (parseFloat(e.target.value) || 0) / 100 })
+                      }
+                      className="h-8 text-xs pr-6"
+                      disabled={bf.leadFunnel?.enabled === true}
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
+                      %
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Dashboard CRM live : ~45% (cible). Ajuster selon donnée réelle.
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-[10px] mb-1.5 block">
+                    Croissance annuelle bilans (FY27 →)
+                  </Label>
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
+                    {bf.bilansGrowthByFy.map((g, idx) => (
+                      <div key={idx}>
+                        <Label className="text-[9px] text-muted-foreground">FY{27 + idx}</Label>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            step={1}
+                            value={(g * 100).toFixed(1).replace(/\.0$/, "")}
+                            onChange={(e) =>
+                              update({
+                                bilansGrowthByFy: bf.bilansGrowthByFy.map((x, i) =>
+                                  i === idx ? (parseFloat(e.target.value) || 0) / 100 : x
+                                ),
+                              })
+                            }
+                            className="h-7 text-[10px] pr-5"
+                            disabled={bf.leadFunnel?.enabled === true}
+                          />
+                          <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground">
+                            %
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {bf.leadFunnel?.enabled !== true ? (
+                <div className="grid grid-cols-3 gap-2 text-[10px] bg-background border rounded p-2">
+                  <div>
+                    <div className="text-muted-foreground">Acquisitions M0</div>
+                    <div className="font-mono font-semibold">{startAcq.toFixed(1)}/mo</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Acquisitions M11</div>
+                    <div className="font-mono font-semibold">{endAcq.toFixed(1)}/mo</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Revenu bilan M0 (HT)</div>
+                    <div className="font-mono font-semibold">{startRevHT.toFixed(0)}€</div>
+                  </div>
+                </div>
+              ) : null}
             </div>
-            <div>
-              <div className="text-muted-foreground">Acquisitions M11</div>
-              <div className="font-mono font-semibold">{endAcq.toFixed(1)}/mo</div>
-            </div>
-            <div>
-              <div className="text-muted-foreground">Revenu bilan M0 (HT)</div>
-              <div className="font-mono font-semibold">{startRevHT.toFixed(0)}€</div>
-            </div>
-          </div>
+          </details>
 
           <div className="flex flex-wrap gap-2">
             <Button
