@@ -3,7 +3,7 @@ import { getInvestorAssumptions } from "./model/defaults";
 import {
   monthlyAcquisitions,
   expectedRetentionMonths,
-  weightedChannelCac,
+  monthlyFunnel,
 } from "./model/compute";
 
 // IRR via Newton-Raphson on monthly cashflows
@@ -211,13 +211,21 @@ export function ltvCac(
         .slice(0, 12)
         .reduce((s, v) => s + v, 0)
     : 0;
-  // CAC : si l'utilisateur a défini des canaux d'acquisition (acquisitionChannels),
-  // on utilise leur CAC pondéré (source : mix par canal × cacEur). Sinon retombe sur
-  // le CAC implicite marketing budget Y1 / acquisitions Y1.
-  const channelCac = weightedChannelCac(params);
-  const implicitCac = acquisitionsY1 > 0 ? fy1.marketing / acquisitionsY1 : 0;
-  const cac = channelCac ?? implicitCac;
-  const cacSource: "channels" | "implicit" = channelCac !== null ? "channels" : "implicit";
+  // CAC : si lead funnel actif, on calcule depuis NET marketing (total - revenu bilan) Y1
+  // divisé par acquisitions Y1. Sinon CAC implicite = marketing Y1 / acquisitions Y1.
+  // Le concept legacy `acquisitionChannels` est retiré (remplacé par le funnel concret).
+  const lf = params.subs.bilanFunnel?.leadFunnel;
+  let cac: number;
+  let cacSource: "funnel" | "implicit";
+  if (lf?.enabled && params.subs.bilanFunnel?.enabled && result.horizonMonths >= 12) {
+    const steps = monthlyFunnel(params, result.horizonMonths);
+    const netMarketingY1 = steps.slice(0, 12).reduce((s, x) => s + x.netMarketing, 0);
+    cac = acquisitionsY1 > 0 ? netMarketingY1 / acquisitionsY1 : 0;
+    cacSource = "funnel";
+  } else {
+    cac = acquisitionsY1 > 0 ? fy1.marketing / acquisitionsY1 : 0;
+    cacSource = "implicit";
+  }
 
   return {
     avgPriceTTC,

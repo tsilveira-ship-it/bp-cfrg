@@ -81,6 +81,7 @@ const GROUPS: Group[] = [
     items: [
       { href: "/parameters", label: "Paramètres", icon: Sliders, modes: ["build"] },
       { href: "/revenue", label: "Recettes", icon: TrendingUp, modes: ["build"] },
+      { href: "/funnel-bp", label: "Funnel BP", icon: Filter, modes: ["build"] },
       { href: "/costs", label: "Dépenses", icon: Coins, modes: ["build"] },
       { href: "/salaries", label: "Masse salariale", icon: UsersRound, modes: ["build"] },
       { href: "/capacity-planner", label: "Capacity planner", icon: CalendarDays, modes: ["build"] },

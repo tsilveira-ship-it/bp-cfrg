@@ -124,14 +124,16 @@ export type FieldNote = {
  * Niveau 6 — Canal d'acquisition (brochure / site web / ResaWod / referral / drop-in).
  * Permet de modéliser CAC différencié par canal et croissance distincte.
  */
+/**
+ * @deprecated — concept remplacé par `bilanFunnel.leadFunnel` (modèle commercial concret
+ * leads/appels/bilans/abos + coût horaire freelance + budget ads). Conservé en types
+ * pour rétro-compat lecture des scénarios anciens, sera ignoré par compute/UI.
+ */
 export type AcquisitionChannel = {
   id: string;
   name: string;
-  /** Part du mix d'acquisition (somme = 1.0). */
   mixPct: number;
-  /** CAC mensuel par acquisition pour ce canal (€). Peut être négatif si canal payant en amont. */
   cacEur: number;
-  /** Croissance annuelle de la part de mix (en valeur absolue ou relative selon mode UI). */
   growthPa: number;
 };
 
@@ -418,7 +420,7 @@ export type ModelParams = {
      */
     bilanFunnel?: {
       enabled: boolean;
-      /** Bilans payés par mois — trajectoire ramp + growth. */
+      /** Bilans payés par mois — trajectoire ramp + growth. Ignoré si leadFunnel actif. */
       monthlyBilansStart: number;
       monthlyBilansEnd: number;
       bilansGrowthByFy: number[];
@@ -426,6 +428,33 @@ export type ModelParams = {
       conversionPct: number;
       /** Prix Bilan TTC (default 19.90). */
       bilanPriceTTC: number;
+      /**
+       * Niveau 6 — Funnel commercial amont du bilan.
+       * Modélise concrètement le travail freelance commercial : nombre de leads bruts /mois
+       * (générés par budget ads + organique), % effectivement appelés, taux conversion
+       * appel→bilan. Calcule coût freelance via taux horaire × minutes par lead. Si actif,
+       * les bilans/mois sont DÉRIVÉS (override `monthlyBilansStart/End`) et le marketing P&L
+       * est remplacé par le total funnel (freelance + ads).
+       */
+      leadFunnel?: {
+        enabled: boolean;
+        /** Leads bruts entrants/mois par FY (length = horizonYears). */
+        leadsPerMonthByFy: number[];
+        /** % leads effectivement appelés par le freelance (0..1). Default 0.85. */
+        callPct: number;
+        /** Taux conversion appel → bilan signé (0..1). Default 0.20. */
+        leadToBilanPct: number;
+        /** Taux horaire freelance commercial (€/h). Default 25. */
+        freelanceHourlyRateEur: number;
+        /** Temps moyen par appel (minutes, inclut tentatives + rappels). Default 8. */
+        minutesPerLead: number;
+        /** Bonus optionnel /bilan signé (€), s'ajoute au taux horaire. Default 0. */
+        bonusPerBilanEur?: number;
+        /** Bonus optionnel /abonnement signé (€), s'ajoute au taux horaire et bonus bilan. Default 0. */
+        bonusPerAboEur?: number;
+        /** Budget ads mensuel qui génère les leads (€). Indexé par `marketing.indexPa`. */
+        adsBudgetMonthlyEur: number;
+      };
     };
     /**
      * Cohort model — si enabled=true, le calcul `count[m]` devient

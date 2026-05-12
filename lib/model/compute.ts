@@ -373,12 +373,115 @@ function monthlySubsCount(p: ModelParams, horizonMonths: number): number[] {
 }
 
 /**
+ * Niveau 6 — Funnel commercial : leads bruts mensuels (avant filtre call/conversion).
+ * Saisi par FY dans `leadFunnel.leadsPerMonthByFy`. Modulé par saisonnalité acquisition
+ * (réutilise celle du cohortModel si défini, sinon subs.seasonality).
+ */
+export function monthlyLeads(p: ModelParams, horizonMonths: number): number[] {
+  const lf = p.subs.bilanFunnel?.leadFunnel;
+  if (!lf || !lf.enabled) return new Array(horizonMonths).fill(0);
+  const out = new Array<number>(horizonMonths).fill(0);
+  const horizonYears = Math.floor(horizonMonths / FY_LEN);
+  for (let fy = 0; fy < horizonYears; fy++) {
+    const v =
+      lf.leadsPerMonthByFy[fy] ??
+      lf.leadsPerMonthByFy[lf.leadsPerMonthByFy.length - 1] ??
+      0;
+    for (let i = 0; i < FY_LEN; i++) {
+      const m = fy * FY_LEN + i;
+      if (m < horizonMonths) out[m] = v;
+    }
+  }
+  // Saisonnalité acquisition (réutilise priorité globale)
+  const seasonality =
+    (p.subs.seasonalityAcquisition && p.subs.seasonalityAcquisition.length === 12
+      ? p.subs.seasonalityAcquisition
+      : p.subs.cohortModel?.acquisitionSeasonality &&
+        p.subs.cohortModel.acquisitionSeasonality.length === 12
+      ? p.subs.cohortModel.acquisitionSeasonality
+      : p.subs.seasonality && p.subs.seasonality.length === 12
+      ? p.subs.seasonality
+      : null);
+  if (seasonality) {
+    for (let m = 0; m < horizonMonths; m++) out[m] = out[m] * seasonality[m % FY_LEN];
+  }
+  return out;
+}
+
+/**
+ * Niveau 6 — Décomposition funnel mensuelle : leads → appels → bilans → acquisitions,
+ * + coûts détaillés (heures freelance, taux horaire × heures, bonus bilan, bonus abo,
+ * budget ads, revenu bilans). Utilisé par UI (preview live) et compute marketing P&L.
+ */
+export type FunnelStep = {
+  leads: number;
+  appels: number;
+  bilans: number;
+  acquisitions: number;
+  hoursFreelance: number;
+  costFreelanceHourly: number;
+  costBonusBilan: number;
+  costBonusAbo: number;
+  costAds: number;
+  totalCost: number;
+  revenuBilanHT: number;
+  netMarketing: number;
+};
+
+export function monthlyFunnel(p: ModelParams, horizonMonths: number): FunnelStep[] {
+  const out: FunnelStep[] = new Array(horizonMonths).fill(null).map(() => ({
+    leads: 0, appels: 0, bilans: 0, acquisitions: 0,
+    hoursFreelance: 0, costFreelanceHourly: 0, costBonusBilan: 0, costBonusAbo: 0,
+    costAds: 0, totalCost: 0, revenuBilanHT: 0, netMarketing: 0,
+  }));
+  const bf = p.subs.bilanFunnel;
+  const lf = bf?.leadFunnel;
+  if (!bf || !lf || !bf.enabled || !lf.enabled) return out;
+
+  const leads = monthlyLeads(p, horizonMonths);
+  const vatDivisor = 1 + (p.subs.vatRate ?? 0);
+  const bilanPriceHT = bf.bilanPriceTTC / vatDivisor;
+  const indexPa = p.marketing.indexPa ?? 0;
+
+  for (let m = 0; m < horizonMonths; m++) {
+    const fy = Math.floor(m / FY_LEN);
+    const adsIndex = Math.pow(1 + indexPa, fy);
+    const l = leads[m];
+    const appels = l * lf.callPct;
+    const bilans = appels * lf.leadToBilanPct;
+    const acquisitions = bilans * bf.conversionPct;
+    const hoursFreelance = appels * (lf.minutesPerLead / 60);
+    const costFreelanceHourly = hoursFreelance * lf.freelanceHourlyRateEur;
+    const costBonusBilan = bilans * (lf.bonusPerBilanEur ?? 0);
+    const costBonusAbo = acquisitions * (lf.bonusPerAboEur ?? 0);
+    const costAds = lf.adsBudgetMonthlyEur * adsIndex;
+    const totalCost = costFreelanceHourly + costBonusBilan + costBonusAbo + costAds;
+    const revenuBilanHT = bilans * bilanPriceHT;
+    const netMarketing = totalCost - revenuBilanHT;
+    out[m] = {
+      leads: l, appels, bilans, acquisitions,
+      hoursFreelance, costFreelanceHourly, costBonusBilan, costBonusAbo,
+      costAds, totalCost, revenuBilanHT, netMarketing,
+    };
+  }
+  return out;
+}
+
+/**
  * Niveau 5 — Construction de la trajectoire mensuelle bilans payés.
- * Retourne array bilans[m] (avant application taux conversion).
+ * Si `bilanFunnel.leadFunnel.enabled` → bilans dérivés du funnel (leads × call × leadToBilan).
+ * Sinon → trajectoire ramp legacy `monthlyBilansStart` → `End` + croissance FY.
  */
 export function monthlyBilansPaid(p: ModelParams, horizonMonths: number): number[] {
   const bf = p.subs.bilanFunnel;
   if (!bf || !bf.enabled) return new Array(horizonMonths).fill(0);
+
+  // Mode funnel — bilans dérivés
+  if (bf.leadFunnel?.enabled) {
+    return monthlyFunnel(p, horizonMonths).map((s) => s.bilans);
+  }
+
+  // Mode ramp legacy
   const out = new Array<number>(horizonMonths).fill(0);
   const a0 = bf.monthlyBilansStart;
   const a1 = bf.monthlyBilansEnd;
@@ -555,13 +658,12 @@ export function effectiveTierChurn(tier: { monthlyChurnPct?: number }, fallback:
 }
 
 /**
- * Niveau 6 — CAC moyen pondéré par canal d'acquisition.
- * Si pas de canaux définis, retourne null (utiliser CAC implicite marketing/acquisitions).
+ * @deprecated — concept acquisitionChannels remplacé par leadFunnel. Conservé en export
+ * pour compatibilité d'import (renvoie null) mais ne fait plus rien. À supprimer après
+ * audit complet des consommateurs.
  */
-export function weightedChannelCac(p: ModelParams): number | null {
-  const channels = p.subs.acquisitionChannels;
-  if (!channels || channels.length === 0) return null;
-  return channels.reduce((s, c) => s + c.cacEur * c.mixPct, 0);
+export function weightedChannelCac(_p: ModelParams): number | null {
+  return null;
 }
 
 /**
@@ -760,6 +862,15 @@ function monthlyOneOff(p: ModelParams, horizonMonths: number): number[] {
 }
 
 function monthlyMarketing(p: ModelParams, revenue: number[]): number[] {
+  // Si lead funnel actif → remplace le budget marketing flat par les coûts du funnel
+  // (freelance horaire + bonus + ads). Évite le double comptage. Le `pctOfRevenue` ne
+  // s'applique plus puisque le funnel décrit déjà l'acquisition complète.
+  const lf = p.subs.bilanFunnel?.leadFunnel;
+  if (lf?.enabled && p.subs.bilanFunnel?.enabled) {
+    const steps = monthlyFunnel(p, revenue.length);
+    return steps.map((s) => s.totalCost);
+  }
+  // Mode legacy : budget flat indexé + % CA
   const out = new Array<number>(revenue.length).fill(0);
   for (let m = 0; m < revenue.length; m++) {
     const fy = Math.floor(m / FY_LEN);

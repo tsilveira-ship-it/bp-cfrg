@@ -11,6 +11,7 @@ import {
   solveAcquisitionsFromNetTarget,
   computeModel,
   expectedRetentionMonths,
+  monthlyFunnel,
 } from "@/lib/model/compute";
 import { Sparkles, Layers } from "lucide-react";
 
@@ -896,7 +897,8 @@ function AdvancedSubsSection({
   setParams: (updater: (p: ModelParams) => ModelParams) => void;
 }) {
   const subs = params.subs;
-  const channels = subs.acquisitionChannels ?? [];
+  // Niveau 6 — `acquisitionChannels` retiré : remplacé par le funnel concret leadFunnel
+  // (lead → appel → bilan → abo + coût horaire freelance) dans BilanFunnelEditor.
   const seasAcqEnabled = !!subs.seasonalityAcquisition;
   const seasChurnEnabled = !!subs.seasonalityChurn;
 
@@ -935,69 +937,15 @@ function AdvancedSubsSection({
     });
   };
 
-  const addChannel = () => {
-    setParams((p) => ({
-      ...p,
-      subs: {
-        ...p.subs,
-        acquisitionChannels: [
-          ...(p.subs.acquisitionChannels ?? []),
-          {
-            id: `ch_${Date.now()}`,
-            name: "Nouveau canal",
-            mixPct: 0.10,
-            cacEur: 30,
-            growthPa: 0.05,
-          },
-        ],
-      },
-    }));
-  };
-
-  const removeChannel = (id: string) => {
-    setParams((p) => ({
-      ...p,
-      subs: {
-        ...p.subs,
-        acquisitionChannels: (p.subs.acquisitionChannels ?? []).filter((c) => c.id !== id),
-      },
-    }));
-  };
-
-  const updateChannel = (id: string, patch: Partial<{ name: string; mixPct: number; cacEur: number; growthPa: number }>) => {
-    setParams((p) => ({
-      ...p,
-      subs: {
-        ...p.subs,
-        acquisitionChannels: (p.subs.acquisitionChannels ?? []).map((c) =>
-          c.id === id ? { ...c, ...patch } : c
-        ),
-      },
-    }));
-  };
-
-  const seedChannelsFromCRM = () => {
-    setParams((p) => ({
-      ...p,
-      subs: {
-        ...p.subs,
-        acquisitionChannels: [
-          { id: `ch_brochure_${Date.now()}`, name: "Brochure", mixPct: 0.63, cacEur: 25, growthPa: 0.05 },
-          { id: `ch_resawod_${Date.now() + 1}`, name: "ResaWod / drop-in", mixPct: 0.29, cacEur: -10, growthPa: 0.10 },
-          { id: `ch_siteweb_${Date.now() + 2}`, name: "Site web (SEO)", mixPct: 0.08, cacEur: 50, growthPa: 0.30 },
-        ],
-      },
-    }));
-  };
-
-  const totalChannelMix = channels.reduce((s, c) => s + c.mixPct, 0);
-  const weightedCac = channels.reduce((s, c) => s + c.cacEur * c.mixPct, 0);
-
   return (
     <section className="border-2 border-dashed border-muted-foreground/30 rounded-lg p-4 bg-muted/5 space-y-4">
       <h4 className="font-heading text-sm font-semibold uppercase tracking-wider">
-        Niveau 6 — Avancé (mix évolutif, canaux, saisonnalité, pause)
+        Niveau 6 — Saisonnalité différenciée + pause/freeze
       </h4>
+      <p className="text-[10px] text-muted-foreground -mt-2">
+        Funnel commercial concret (leads / appels / bilans / abos + coût freelance + ads) :
+        voir la section <em>Funnel Bilan</em> dans Mode cohort ci-dessus.
+      </p>
 
       {/* Pause/freeze */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-t pt-3">
@@ -1079,103 +1027,6 @@ function AdvancedSubsSection({
         ) : null}
       </div>
 
-      {/* Canaux d'acquisition */}
-      <div className="border-t pt-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <Label className="text-xs">Canaux d&apos;acquisition (CAC pondéré)</Label>
-            <p className="text-[10px] text-muted-foreground">
-              {channels.length > 0 ? (
-                <>
-                  Mix total :{" "}
-                  <span className={Math.abs(totalChannelMix - 1) < 0.001 ? "text-emerald-600" : "text-red-600"}>
-                    {fmtNum(totalChannelMix * 100)}%
-                  </span>
-                  {" — "}
-                  CAC pondéré : <span className="font-mono font-semibold">{weightedCac.toFixed(2)}€</span>
-                </>
-              ) : (
-                "Décompose les acquisitions par canal pour CAC différencié."
-              )}
-            </p>
-          </div>
-          <div className="flex gap-1">
-            {channels.length === 0 ? (
-              <Button variant="ghost" size="sm" onClick={seedChannelsFromCRM} className="text-[10px] h-7">
-                Preset CRM (brochure 63% / ResaWod 29% / web 8%)
-              </Button>
-            ) : null}
-            <Button variant="outline" size="sm" onClick={addChannel} className="text-[10px] h-7">
-              + Canal
-            </Button>
-          </div>
-        </div>
-        {channels.length > 0 ? (
-          <div className="space-y-1.5">
-            {channels.map((c) => (
-              <div
-                key={c.id}
-                className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end p-2 border rounded bg-background"
-              >
-                <div className="md:col-span-4">
-                  <Label className="text-[10px]">Nom</Label>
-                  <Input
-                    value={c.name}
-                    onChange={(e) => updateChannel(c.id, { name: e.target.value })}
-                    className="h-7 text-xs"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <Label className="text-[10px]">Mix (%)</Label>
-                  <Input
-                    type="number"
-                    step="1"
-                    value={(c.mixPct * 100).toFixed(1)}
-                    onChange={(e) =>
-                      updateChannel(c.id, { mixPct: (parseFloat(e.target.value) || 0) / 100 })
-                    }
-                    className="h-7 text-xs"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <Label className="text-[10px]">CAC (€)</Label>
-                  <Input
-                    type="number"
-                    step="1"
-                    value={c.cacEur}
-                    onChange={(e) =>
-                      updateChannel(c.id, { cacEur: parseFloat(e.target.value) || 0 })
-                    }
-                    className="h-7 text-xs"
-                  />
-                </div>
-                <div className="md:col-span-3">
-                  <Label className="text-[10px]">Croissance/an (%)</Label>
-                  <Input
-                    type="number"
-                    step="1"
-                    value={(c.growthPa * 100).toFixed(1)}
-                    onChange={(e) =>
-                      updateChannel(c.id, { growthPa: (parseFloat(e.target.value) || 0) / 100 })
-                    }
-                    className="h-7 text-xs"
-                  />
-                </div>
-                <div className="md:col-span-1 text-right">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-red-600 h-7"
-                    onClick={() => removeChannel(c.id)}
-                  >
-                    ×
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </div>
     </section>
   );
 }
@@ -1371,6 +1222,8 @@ function BilanFunnelEditor({
               Importer trajectoire dashboard CRM (V2)
             </Button>
           </div>
+
+          <LeadFunnelEditor params={params} setParams={setParams} />
         </>
       ) : (
         <p className="text-[10px] text-muted-foreground italic">
@@ -1604,6 +1457,514 @@ function RetentionCurveEditor({
           un newbie-drop ou une courbe empirique.
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * Niveau 6 — Funnel commercial concret : leads /mois → appels freelance → bilans → abos.
+ *
+ * 2 colonnes : saisie inputs à gauche, aperçu dérivé live à droite (calculé sur FY0).
+ * Si activé, remplace `marketing.monthlyBudget` flat dans le P&L par
+ *   freelance horaire + bonus bilan + bonus abo + ads
+ * et dérive les bilans depuis les leads (override `monthlyBilansStart/End` ramp).
+ */
+function LeadFunnelEditor({
+  params,
+  setParams,
+}: {
+  params: ModelParams;
+  setParams: (updater: (p: ModelParams) => ModelParams) => void;
+}) {
+  const bf = params.subs.bilanFunnel;
+  const lf = bf?.leadFunnel;
+  const enabled = lf?.enabled === true;
+  const horizonYears = params.timeline.horizonYears;
+  const fyLabels = buildTimeline(params.timeline.startYear, horizonYears).fyLabels;
+
+  const horizonMonths = horizonYears * 12;
+  const steps = useMemo(() => {
+    if (!enabled || !bf?.enabled) return [];
+    return monthlyFunnel(params, horizonMonths);
+  }, [params, enabled, bf?.enabled, horizonMonths]);
+
+  const annualByFy = useMemo(() => {
+    if (steps.length === 0) return [];
+    const out: {
+      fy: number;
+      label: string;
+      leads: number;
+      appels: number;
+      bilans: number;
+      acquisitions: number;
+      hours: number;
+      costHourly: number;
+      costBonusBilan: number;
+      costBonusAbo: number;
+      costAds: number;
+      total: number;
+      revenuBilan: number;
+      net: number;
+    }[] = [];
+    for (let fy = 0; fy < horizonYears; fy++) {
+      const slice = steps.slice(fy * 12, (fy + 1) * 12);
+      out.push({
+        fy,
+        label: fyLabels[fy] ?? `FY${fy}`,
+        leads: slice.reduce((s, x) => s + x.leads, 0),
+        appels: slice.reduce((s, x) => s + x.appels, 0),
+        bilans: slice.reduce((s, x) => s + x.bilans, 0),
+        acquisitions: slice.reduce((s, x) => s + x.acquisitions, 0),
+        hours: slice.reduce((s, x) => s + x.hoursFreelance, 0),
+        costHourly: slice.reduce((s, x) => s + x.costFreelanceHourly, 0),
+        costBonusBilan: slice.reduce((s, x) => s + x.costBonusBilan, 0),
+        costBonusAbo: slice.reduce((s, x) => s + x.costBonusAbo, 0),
+        costAds: slice.reduce((s, x) => s + x.costAds, 0),
+        total: slice.reduce((s, x) => s + x.totalCost, 0),
+        revenuBilan: slice.reduce((s, x) => s + x.revenuBilanHT, 0),
+        net: slice.reduce((s, x) => s + x.netMarketing, 0),
+      });
+    }
+    return out;
+  }, [steps, horizonYears, fyLabels]);
+
+  const setEnabled = (next: boolean) => {
+    setParams((p) => {
+      const existing = p.subs.bilanFunnel;
+      if (!existing) return p;
+      if (next) {
+        return {
+          ...p,
+          subs: {
+            ...p.subs,
+            bilanFunnel: {
+              ...existing,
+              leadFunnel: existing.leadFunnel ?? {
+                enabled: true,
+                leadsPerMonthByFy: new Array(horizonYears).fill(100).map((v, i) => v + i * 20),
+                callPct: 0.85,
+                leadToBilanPct: 0.20,
+                freelanceHourlyRateEur: 25,
+                minutesPerLead: 8,
+                bonusPerBilanEur: 30,
+                bonusPerAboEur: 0,
+                adsBudgetMonthlyEur: 800,
+              },
+            },
+          },
+        };
+      }
+      return {
+        ...p,
+        subs: {
+          ...p.subs,
+          bilanFunnel: {
+            ...existing,
+            leadFunnel: existing.leadFunnel
+              ? { ...existing.leadFunnel, enabled: false }
+              : undefined,
+          },
+        },
+      };
+    });
+  };
+
+  const update = (
+    patch: Partial<NonNullable<NonNullable<ModelParams["subs"]["bilanFunnel"]>["leadFunnel"]>>
+  ) => {
+    setParams((p) => {
+      const existing = p.subs.bilanFunnel?.leadFunnel;
+      if (!existing) return p;
+      return {
+        ...p,
+        subs: {
+          ...p.subs,
+          bilanFunnel: {
+            ...p.subs.bilanFunnel!,
+            leadFunnel: { ...existing, ...patch },
+          },
+        },
+      };
+    });
+  };
+
+  return (
+    <div className="border-l-4 border-[#D32F2F] rounded-md p-3 bg-[#D32F2F]/5 space-y-3 mt-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h5 className="text-xs font-semibold uppercase tracking-wider text-[#D32F2F]">
+            Funnel commercial — Leads → Appels → Bilans → Abos
+          </h5>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            Modélise le travail freelance + budget ads. Si activé, remplace le budget
+            marketing flat dans le P&L et dérive les bilans depuis les leads.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="lead-funnel-toggle" className="text-[10px]">
+            {enabled ? "Activé" : "Désactivé"}
+          </Label>
+          <Switch id="lead-funnel-toggle" checked={enabled} onCheckedChange={setEnabled} />
+        </div>
+      </div>
+
+      {enabled && lf ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Colonne saisie */}
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs mb-1 block">Leads bruts/mois par FY</Label>
+              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-1">
+                {Array.from({ length: horizonYears }, (_, fy) => (
+                  <div key={fy}>
+                    <Label className="text-[9px] text-muted-foreground">{fyLabels[fy]}</Label>
+                    <Input
+                      type="number"
+                      step="5"
+                      value={
+                        lf.leadsPerMonthByFy[fy] ??
+                        lf.leadsPerMonthByFy[lf.leadsPerMonthByFy.length - 1] ??
+                        0
+                      }
+                      onChange={(e) => {
+                        const arr = [...lf.leadsPerMonthByFy];
+                        while (arr.length < horizonYears) arr.push(arr[arr.length - 1] ?? 0);
+                        arr[fy] = parseFloat(e.target.value) || 0;
+                        update({ leadsPerMonthByFy: arr });
+                      }}
+                      className="h-7 text-[10px] text-center"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-[10px]">% leads appelés</Label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    step="1"
+                    value={(lf.callPct * 100).toFixed(0)}
+                    onChange={(e) =>
+                      update({ callPct: (parseFloat(e.target.value) || 0) / 100 })
+                    }
+                    className="h-8 text-xs pr-6"
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
+                    %
+                  </span>
+                </div>
+                <p className="text-[9px] text-muted-foreground mt-0.5">
+                  Default 85% (15% non joignables)
+                </p>
+              </div>
+              <div>
+                <Label className="text-[10px]">% appel → bilan</Label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    step="1"
+                    value={(lf.leadToBilanPct * 100).toFixed(0)}
+                    onChange={(e) =>
+                      update({ leadToBilanPct: (parseFloat(e.target.value) || 0) / 100 })
+                    }
+                    className="h-8 text-xs pr-6"
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
+                    %
+                  </span>
+                </div>
+                <p className="text-[9px] text-muted-foreground mt-0.5">15-25% typique</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-[10px]">Taux horaire freelance (€/h)</Label>
+                <Input
+                  type="number"
+                  step="1"
+                  value={lf.freelanceHourlyRateEur}
+                  onChange={(e) =>
+                    update({ freelanceHourlyRateEur: parseFloat(e.target.value) || 0 })
+                  }
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div>
+                <Label className="text-[10px]">Minutes /appel</Label>
+                <Input
+                  type="number"
+                  step="1"
+                  value={lf.minutesPerLead}
+                  onChange={(e) =>
+                    update({ minutesPerLead: parseFloat(e.target.value) || 0 })
+                  }
+                  className="h-8 text-xs"
+                />
+                <p className="text-[9px] text-muted-foreground mt-0.5">5-15 min typique</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-[10px]">Bonus / bilan signé (€)</Label>
+                <Input
+                  type="number"
+                  step="5"
+                  value={lf.bonusPerBilanEur ?? 0}
+                  onChange={(e) =>
+                    update({ bonusPerBilanEur: parseFloat(e.target.value) || 0 })
+                  }
+                  className="h-8 text-xs"
+                />
+                <p className="text-[9px] text-muted-foreground mt-0.5">Incite qualité</p>
+              </div>
+              <div>
+                <Label className="text-[10px]">Bonus / abo signé (€)</Label>
+                <Input
+                  type="number"
+                  step="5"
+                  value={lf.bonusPerAboEur ?? 0}
+                  onChange={(e) =>
+                    update({ bonusPerAboEur: parseFloat(e.target.value) || 0 })
+                  }
+                  className="h-8 text-xs"
+                />
+                <p className="text-[9px] text-muted-foreground mt-0.5">
+                  Incite conversion finale
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-[10px]">Budget ads /mois (€)</Label>
+              <Input
+                type="number"
+                step="50"
+                value={lf.adsBudgetMonthlyEur}
+                onChange={(e) =>
+                  update({ adsBudgetMonthlyEur: parseFloat(e.target.value) || 0 })
+                }
+                className="h-8 text-xs"
+              />
+              <p className="text-[9px] text-muted-foreground mt-0.5">
+                Indexé par marketing.indexPa. Génère le flux de leads en amont.
+              </p>
+            </div>
+          </div>
+
+          {/* Colonne aperçu — FY0 */}
+          <div className="space-y-2">
+            {annualByFy[0] ? (
+              <>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                  Aperçu FY0 ({annualByFy[0].label}) — mensuel moyen
+                </div>
+                <div className="rounded border bg-background p-2.5 space-y-1 text-[11px] font-mono">
+                  <FunnelRow label="Leads" value={`${(annualByFy[0].leads / 12).toFixed(0)} /mois`} />
+                  <FunnelRow label="↓ × call %" value={`× ${(lf.callPct * 100).toFixed(0)}%`} dim />
+                  <FunnelRow label="Appels" value={`${(annualByFy[0].appels / 12).toFixed(0)} /mois`} />
+                  <div className="text-[10px] text-muted-foreground pl-3">
+                    → {(annualByFy[0].hours / 12).toFixed(1)} h freelance/mois (
+                    {(annualByFy[0].hours / 12 / 137).toFixed(2)} FTE)
+                  </div>
+                  <FunnelRow
+                    label="↓ × conv bilan"
+                    value={`× ${(lf.leadToBilanPct * 100).toFixed(0)}%`}
+                    dim
+                  />
+                  <FunnelRow label="Bilans" value={`${(annualByFy[0].bilans / 12).toFixed(1)} /mois`} />
+                  <FunnelRow
+                    label={`↓ × conv abo (${((bf?.conversionPct ?? 0) * 100).toFixed(0)}%)`}
+                    value=""
+                    dim
+                  />
+                  <FunnelRow
+                    label="Acquisitions"
+                    value={`${(annualByFy[0].acquisitions / 12).toFixed(1)} /mois`}
+                    accent
+                  />
+                </div>
+                <div className="rounded border bg-background p-2.5 space-y-1 text-[11px] font-mono">
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">
+                    Coûts mensuels moyens
+                  </div>
+                  <FunnelRow
+                    label="Freelance horaire"
+                    value={`${(annualByFy[0].costHourly / 12).toFixed(0)} €`}
+                  />
+                  {lf.bonusPerBilanEur ? (
+                    <FunnelRow
+                      label="Bonus bilans"
+                      value={`${(annualByFy[0].costBonusBilan / 12).toFixed(0)} €`}
+                    />
+                  ) : null}
+                  {lf.bonusPerAboEur ? (
+                    <FunnelRow
+                      label="Bonus abos"
+                      value={`${(annualByFy[0].costBonusAbo / 12).toFixed(0)} €`}
+                    />
+                  ) : null}
+                  <FunnelRow label="Ads" value={`${(annualByFy[0].costAds / 12).toFixed(0)} €`} />
+                  <FunnelRow
+                    label="TOTAL marketing"
+                    value={`${(annualByFy[0].total / 12).toFixed(0)} €`}
+                    accent
+                  />
+                  <FunnelRow
+                    label="Revenu bilans (HT)"
+                    value={`− ${(annualByFy[0].revenuBilan / 12).toFixed(0)} €`}
+                    dim
+                  />
+                  <FunnelRow
+                    label="NET marketing"
+                    value={`${(annualByFy[0].net / 12).toFixed(0)} €`}
+                    accent
+                  />
+                  <div className="border-t mt-1 pt-1 text-[10px] text-muted-foreground">
+                    Annuel :{" "}
+                    <span className="font-semibold text-foreground">
+                      {annualByFy[0].net.toFixed(0)} €
+                    </span>
+                    {" — "}CAC effectif :{" "}
+                    <span className="font-semibold text-foreground">
+                      {annualByFy[0].acquisitions > 0
+                        ? (annualByFy[0].net / annualByFy[0].acquisitions).toFixed(0) + " €"
+                        : "—"}
+                    </span>
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <p className="text-[10px] text-muted-foreground italic">
+          Activer pour modéliser concrètement : N leads/mois × % appels freelance × % conversion
+          bilan → coût freelance horaire + bonus + budget ads. Remplace le budget marketing flat
+          du P&L.
+        </p>
+      )}
+
+      {enabled && annualByFy.length > 0 ? (
+        <details className="border rounded-md bg-background">
+          <summary className="cursor-pointer p-2 text-[11px] font-semibold uppercase tracking-wider hover:bg-muted/30">
+            Tableau annuel funnel × {horizonYears} ans
+          </summary>
+          <div className="overflow-x-auto p-2 border-t">
+            <table className="text-[10px] w-full">
+              <thead>
+                <tr className="border-b text-muted-foreground">
+                  <th className="text-left px-1 py-0.5">FY</th>
+                  <th className="text-right px-1">Leads</th>
+                  <th className="text-right px-1">Appels</th>
+                  <th className="text-right px-1">Heures</th>
+                  <th className="text-right px-1">Bilans</th>
+                  <th className="text-right px-1">Acquis.</th>
+                  <th className="text-right px-1">Freelance</th>
+                  <th className="text-right px-1">Bonus</th>
+                  <th className="text-right px-1">Ads</th>
+                  <th className="text-right px-1 border-l">Total</th>
+                  <th className="text-right px-1">Rev. bilan</th>
+                  <th className="text-right px-1 border-l font-semibold">NET</th>
+                  <th className="text-right px-1">CAC</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono">
+                {annualByFy.map((r) => (
+                  <tr key={r.fy} className="border-b">
+                    <td className="px-1 py-0.5 font-semibold">{r.label}</td>
+                    <td className="text-right px-1">{r.leads.toFixed(0)}</td>
+                    <td className="text-right px-1">{r.appels.toFixed(0)}</td>
+                    <td className="text-right px-1">{r.hours.toFixed(0)}</td>
+                    <td className="text-right px-1">{r.bilans.toFixed(0)}</td>
+                    <td className="text-right px-1 font-semibold">
+                      {r.acquisitions.toFixed(0)}
+                    </td>
+                    <td className="text-right px-1">{r.costHourly.toFixed(0)}€</td>
+                    <td className="text-right px-1">
+                      {(r.costBonusBilan + r.costBonusAbo).toFixed(0)}€
+                    </td>
+                    <td className="text-right px-1">{r.costAds.toFixed(0)}€</td>
+                    <td className="text-right px-1 border-l">{r.total.toFixed(0)}€</td>
+                    <td className="text-right px-1">−{r.revenuBilan.toFixed(0)}€</td>
+                    <td className="text-right px-1 border-l font-semibold">
+                      {r.net.toFixed(0)}€
+                    </td>
+                    <td className="text-right px-1">
+                      {r.acquisitions > 0 ? `${(r.net / r.acquisitions).toFixed(0)}€` : "—"}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="font-semibold bg-muted/30">
+                  <td className="px-1 py-1">TOTAL</td>
+                  <td className="text-right px-1">
+                    {annualByFy.reduce((s, r) => s + r.leads, 0).toFixed(0)}
+                  </td>
+                  <td className="text-right px-1">
+                    {annualByFy.reduce((s, r) => s + r.appels, 0).toFixed(0)}
+                  </td>
+                  <td className="text-right px-1">
+                    {annualByFy.reduce((s, r) => s + r.hours, 0).toFixed(0)}
+                  </td>
+                  <td className="text-right px-1">
+                    {annualByFy.reduce((s, r) => s + r.bilans, 0).toFixed(0)}
+                  </td>
+                  <td className="text-right px-1">
+                    {annualByFy.reduce((s, r) => s + r.acquisitions, 0).toFixed(0)}
+                  </td>
+                  <td className="text-right px-1">
+                    {annualByFy.reduce((s, r) => s + r.costHourly, 0).toFixed(0)}€
+                  </td>
+                  <td className="text-right px-1">
+                    {annualByFy.reduce((s, r) => s + r.costBonusBilan + r.costBonusAbo, 0).toFixed(0)}€
+                  </td>
+                  <td className="text-right px-1">
+                    {annualByFy.reduce((s, r) => s + r.costAds, 0).toFixed(0)}€
+                  </td>
+                  <td className="text-right px-1 border-l">
+                    {annualByFy.reduce((s, r) => s + r.total, 0).toFixed(0)}€
+                  </td>
+                  <td className="text-right px-1">
+                    −{annualByFy.reduce((s, r) => s + r.revenuBilan, 0).toFixed(0)}€
+                  </td>
+                  <td className="text-right px-1 border-l">
+                    {annualByFy.reduce((s, r) => s + r.net, 0).toFixed(0)}€
+                  </td>
+                  <td className="text-right px-1">—</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+function FunnelRow({
+  label,
+  value,
+  accent,
+  dim,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+  dim?: boolean;
+}) {
+  return (
+    <div
+      className={
+        "flex justify-between " +
+        (accent ? "font-bold text-[#D32F2F]" : dim ? "text-muted-foreground text-[10px] pl-3" : "")
+      }
+    >
+      <span>{label}</span>
+      <span>{value}</span>
     </div>
   );
 }
